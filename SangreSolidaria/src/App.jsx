@@ -1,126 +1,69 @@
-
+import { useState } from 'react'
 import './App.css'
+import Home from './screens/Home.jsx'
+import Login from './screens/Login.jsx'
+import Register from './screens/Register.jsx'
+import Donate from './screens/Donate.jsx'
+import NeedDonors from './screens/NeedDonors.jsx'
+import About from './screens/About.jsx'
 
 function App() {
+  const [screen, setScreen] = useState('inicio')
+
+  function goHomeAndScroll(sectionId) {
+    setScreen('inicio')
+    window.setTimeout(() => {
+      document.getElementById(sectionId)?.scrollIntoView({
+        behavior: 'smooth',
+      })
+    }, 0)
+  }
+
   return (
     <div className="app">
       <header className="navbar">
-        <a href="#" className="logo">
+        <button className="logo" onClick={() => setScreen('inicio')}>
           <span className="logo-icon">♥</span>
           SangreSolidaria
-        </a>
+        </button>
 
         <nav className="menu">
-          <a href="#inicio">Inicio</a>
-          <a href="#como-funciona">Cómo funciona</a>
-          <a href="#sobre">Sobre nosotros</a>
+          <button type="button" onClick={() => goHomeAndScroll('inicio')}>
+            Inicio
+          </button>
+          <button
+            type="button"
+            onClick={() => goHomeAndScroll('como-funciona')}
+          >
+            Cómo funciona
+          </button>
+          <button type="button" onClick={() => setScreen('sobre')}>
+            Sobre nosotros
+          </button>
         </nav>
 
-        <button className="btn-login">
-          Iniciar sesión
-        </button>
+        <div className="nav-actions">
+          <button
+            className="btn-login"
+            onClick={() => setScreen('login')}
+          >
+            Iniciar sesión
+          </button>
+          <button
+            className="btn-primary"
+            onClick={() => setScreen('registro')}
+          >
+            Registrarse
+          </button>
+        </div>
       </header>
 
-      <main>
-        <section className="hero" id="inicio">
-          <div className="hero-content">
-            <span className="tag">
-              ♥ Donar sangre salva vidas
-            </span>
-
-            <h1>
-              Una donación puede
-              <span> cambiar una vida.</span>
-            </h1>
-
-            <p>
-              Conectamos personas que necesitan sangre
-              con donantes solidarios. Tu ayuda puede
-              hacer la diferencia.
-            </p>
-
-            <div className="hero-buttons">
-              <button className="btn-primary">
-                Quiero ser donante
-              </button>
-
-              <button className="btn-secondary">
-                Necesito donantes
-              </button>
-            </div>
-
-            <div className="hero-note">
-              <span>♥</span>
-              Juntos podemos ayudar a más personas.
-            </div>
-          </div>
-
-          <div className="hero-image">
-            <div className="image-circle">
-              <div className="blood-drop">♥</div>
-            </div>
-
-            <div className="floating-card">
-              <span className="card-heart">♥</span>
-              <div>
-                <strong>Un gesto solidario</strong>
-                <p>Puede salvar una vida</p>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section className="how" id="como-funciona">
-          <span className="section-tag">SANGRESOLIDARIA</span>
-
-          <h2>Ayudar es más fácil de lo que pensás</h2>
-
-          <p className="section-description">
-            Tres simples pasos para conectar solidaridad
-            con quienes más lo necesitan.
-          </p>
-
-          <div className="steps">
-            <article className="step-card">
-              <div className="step-icon">01</div>
-              <h3>Registrate</h3>
-              <p>
-                Creá tu perfil y contanos si querés
-                donar sangre o necesitás ayuda.
-              </p>
-            </article>
-
-            <article className="step-card">
-              <div className="step-icon">02</div>
-              <h3>Encontrá ayuda</h3>
-              <p>
-                Consultá solicitudes y encontrá
-                personas que puedan ayudarte.
-              </p>
-            </article>
-
-            <article className="step-card">
-              <div className="step-icon">03</div>
-              <h3>Hacé la diferencia</h3>
-              <p>
-                Contactate y coordiná los siguientes
-                pasos con el centro de salud.
-              </p>
-            </article>
-          </div>
-        </section>
-
-        <section className="callout" id="sobre">
-          <h2>La solidaridad nos une.</h2>
-          <p>
-            Cada persona puede ser parte del cambio.
-            Sumate a SangreSolidaria.
-          </p>
-          <button className="btn-light">
-            Conocé más
-          </button>
-        </section>
-      </main>
+      {screen === 'inicio' ? <Home onNavigate={setScreen} /> : null}
+      {screen === 'login' ? <Login onNavigate={setScreen} /> : null}
+      {screen === 'registro' ? <Register onNavigate={setScreen} /> : null}
+      {screen === 'donar' ? <Donate /> : null}
+      {screen === 'solicitar' ? <NeedDonors /> : null}
+      {screen === 'sobre' ? <About onNavigate={setScreen} /> : null}
 
       <footer>
         <p>© 2026 SangreSolidaria · Unimos vidas con solidaridad</p>

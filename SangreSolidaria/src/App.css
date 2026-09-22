@@ -57,8 +57,26 @@ a {
   font-size: 14px;
 }
 
-.menu a:hover {
+.menu button {
+  color: #555;
+  font-size: 14px;
+}
+
+.menu button:hover {
   color: #c62843;
+}
+
+.logo,
+.menu button {
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+.nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .btn-login {
@@ -67,6 +85,10 @@ a {
   border-radius: 8px;
   color: #c62843;
   background: white;
+}
+
+.navbar .btn-primary {
+  padding: 12px 22px;
 }
 
 .hero {
@@ -250,6 +272,151 @@ a {
   background: white;
 }
 
+.step-card-btn {
+  width: 100%;
+  text-align: left;
+}
+
+.step-card-btn:hover {
+  border-color: #e6a5b0;
+}
+
+.page {
+  min-height: calc(100svh - 160px);
+  padding: 50px 8%;
+  background: #fff8f8;
+  display: grid;
+  place-items: start center;
+}
+
+.page-card {
+  width: min(560px, 100%);
+  padding: 36px;
+  border-radius: 18px;
+  background: white;
+  border: 1px solid #f0e1e3;
+  text-align: left;
+}
+
+.page-wide {
+  width: min(860px, 100%);
+}
+
+.page-card h1 {
+  margin-top: 16px;
+  font-size: 32px;
+  letter-spacing: -1px;
+  color: #252525;
+}
+
+.page-card > p {
+  margin-top: 12px;
+  color: #666;
+  line-height: 1.7;
+}
+
+.form {
+  display: grid;
+  gap: 16px;
+  margin-top: 28px;
+}
+
+.form label {
+  display: grid;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: bold;
+  color: #444;
+}
+
+.form input,
+.form select,
+.form textarea {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid #e6d4d7;
+  border-radius: 8px;
+  font: inherit;
+  color: #252525;
+  background: #fff;
+}
+
+.form textarea {
+  resize: vertical;
+}
+
+.role-options {
+  border: 1px solid #f0e1e3;
+  border-radius: 10px;
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+}
+
+.role-options legend {
+  padding: 0 6px;
+  font-size: 14px;
+  font-weight: bold;
+}
+
+.radio {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: normal;
+}
+
+.form-ok {
+  margin-top: 18px;
+  padding: 14px;
+  border-radius: 10px;
+  background: #eef8f0;
+  color: #1f6b3a;
+  line-height: 1.6;
+}
+
+.form-ok .btn-secondary {
+  margin-top: 12px;
+}
+
+.form-switch {
+  margin-top: 20px;
+  color: #666;
+  font-size: 14px;
+}
+
+.form-switch button {
+  background: none;
+  border: none;
+  color: #c62843;
+  font-weight: bold;
+  padding: 0;
+}
+
+.about-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin: 28px 0 10px;
+}
+
+.about-grid article {
+  padding: 18px;
+  border: 1px solid #f0e1e3;
+  border-radius: 12px;
+}
+
+.about-grid h3 {
+  color: #c62843;
+  margin-bottom: 8px;
+}
+
+.about-grid p {
+  color: #666;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
 .step-icon {
   width: 48px;
   height: 48px;
@@ -311,6 +478,15 @@ footer {
     height: auto;
     flex-wrap: wrap;
     gap: 20px;
+  }
+
+  .nav-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .about-grid {
+    grid-template-columns: 1fr;
   }
 
   .menu {
