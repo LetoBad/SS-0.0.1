@@ -87,6 +87,11 @@ a {
   background: white;
 }
 
+.nav-user {
+  color: #555;
+  font-size: 14px;
+}
+
 .navbar .btn-primary {
   padding: 12px 22px;
 }
@@ -341,6 +346,12 @@ a {
   background: #fff;
 }
 
+.form select {
+  appearance: auto;
+  cursor: pointer;
+  min-height: 46px;
+}
+
 .form textarea {
   resize: vertical;
 }
@@ -373,6 +384,42 @@ a {
   background: #eef8f0;
   color: #1f6b3a;
   line-height: 1.6;
+}
+
+.form-error {
+  margin-top: 18px;
+  padding: 14px;
+  border-radius: 10px;
+  background: #fdecee;
+  color: #9b1c32;
+  line-height: 1.6;
+}
+
+.muted {
+  margin-top: 18px;
+  color: #777;
+}
+
+.request-list {
+  display: grid;
+  gap: 14px;
+  margin-top: 24px;
+}
+
+.request-card {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+  padding: 16px;
+  border: 1px solid #f0e1e3;
+  border-radius: 12px;
+}
+
+.request-card p {
+  margin-top: 6px;
+  color: #666;
+  font-size: 14px;
 }
 
 .form-ok .btn-secondary {
@@ -487,6 +534,11 @@ footer {
 
   .about-grid {
     grid-template-columns: 1fr;
+  }
+
+  .request-card {
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .menu {

@@ -1,27 +1,66 @@
 import { useState } from 'react'
+import { useAuth } from '../context/AuthContext.jsx'
+import { createBloodRequest } from '../lib/db.js'
+import { BLOOD_TYPES } from '../lib/catalog.js'
 
-const BLOOD_TYPES = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-']
-
-function NeedDonors() {
+function NeedDonors({ onNavigate }) {
+  const { user } = useAuth()
   const [form, setForm] = useState({
     patient: '',
-    bloodType: 'O+',
+    bloodType: '',
     hospital: '',
     city: '',
-    urgency: 'media',
+    donorsNeeded: 1,
+    neededDate: '',
     details: '',
   })
   const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
 
   function handleChange(event) {
     const { name, value } = event.target
     setForm((current) => ({ ...current, [name]: value }))
   }
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) {
     event.preventDefault()
-    setMessage(
-      `Solicitud publicada para ${form.patient} (${form.bloodType}) en ${form.hospital}.`
+    setError('')
+    setMessage('')
+    setLoading(true)
+
+    try {
+      await createBloodRequest({
+        usuarioId: user.id,
+        ...form,
+      })
+      setMessage(
+        `Solicitud publicada para ${form.patient} (${form.bloodType}) en ${form.hospital}.`
+      )
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (!user) {
+    return (
+      <main className="page">
+        <div className="page-card">
+          <span className="tag">Pedí ayuda</span>
+          <h1>Necesito donantes</h1>
+          <p>Para publicar una solicitud, primero iniciá sesión o registrate.</p>
+          <div className="hero-buttons">
+            <button className="btn-primary" onClick={() => onNavigate('login')}>
+              Iniciar sesión
+            </button>
+            <button className="btn-secondary" onClick={() => onNavigate('registro')}>
+              Registrarse
+            </button>
+          </div>
+        </div>
+      </main>
     )
   }
 
@@ -31,8 +70,8 @@ function NeedDonors() {
         <span className="tag">Pedí ayuda</span>
         <h1>Necesito donantes</h1>
         <p>
-          Publicá una solicitud para que donantes
-          solidarios puedan acercarse al centro de salud.
+          La solicitud se guarda en la tabla solicitudes,
+          con estado ACTIVA.
         </p>
 
         <form className="form" onSubmit={handleSubmit}>
@@ -54,7 +93,11 @@ function NeedDonors() {
               name="bloodType"
               value={form.bloodType}
               onChange={handleChange}
+              required
             >
+              <option value="" disabled>
+                Elegí el grupo
+              </option>
               {BLOOD_TYPES.map((type) => (
                 <option key={type} value={type}>
                   {type}
@@ -88,16 +131,25 @@ function NeedDonors() {
           </label>
 
           <label>
-            Urgencia
-            <select
-              name="urgency"
-              value={form.urgency}
+            Cantidad de donantes
+            <input
+              type="number"
+              name="donorsNeeded"
+              min="1"
+              value={form.donorsNeeded}
               onChange={handleChange}
-            >
-              <option value="baja">Baja</option>
-              <option value="media">Media</option>
-              <option value="alta">Alta</option>
-            </select>
+              required
+            />
+          </label>
+
+          <label>
+            Fecha de necesidad
+            <input
+              type="date"
+              name="neededDate"
+              value={form.neededDate}
+              onChange={handleChange}
+            />
           </label>
 
           <label>
@@ -106,16 +158,17 @@ function NeedDonors() {
               name="details"
               value={form.details}
               onChange={handleChange}
-              placeholder="Cantidad de donantes, contacto, horarios..."
+              placeholder="Contacto, horarios, indicaciones..."
               rows={4}
             />
           </label>
 
-          <button className="btn-primary" type="submit">
-            Publicar solicitud
+          <button className="btn-primary" type="submit" disabled={loading}>
+            {loading ? 'Publicando...' : 'Publicar solicitud'}
           </button>
         </form>
 
+        {error ? <p className="form-error">{error}</p> : null}
         {message ? <p className="form-ok">{message}</p> : null}
       </div>
     </main>

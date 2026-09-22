@@ -6,9 +6,11 @@ import Register from './screens/Register.jsx'
 import Donate from './screens/Donate.jsx'
 import NeedDonors from './screens/NeedDonors.jsx'
 import About from './screens/About.jsx'
+import { useAuth } from './context/AuthContext.jsx'
 
 function App() {
   const [screen, setScreen] = useState('inicio')
+  const { user, logout } = useAuth()
 
   function goHomeAndScroll(sectionId) {
     setScreen('inicio')
@@ -43,26 +45,43 @@ function App() {
         </nav>
 
         <div className="nav-actions">
-          <button
-            className="btn-login"
-            onClick={() => setScreen('login')}
-          >
-            Iniciar sesión
-          </button>
-          <button
-            className="btn-primary"
-            onClick={() => setScreen('registro')}
-          >
-            Registrarse
-          </button>
+          {user ? (
+            <>
+              <span className="nav-user">Hola, {user.nombre}</span>
+              <button
+                className="btn-login"
+                onClick={() => {
+                  logout()
+                  setScreen('inicio')
+                }}
+              >
+                Cerrar sesión
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                className="btn-login"
+                onClick={() => setScreen('login')}
+              >
+                Iniciar sesión
+              </button>
+              <button
+                className="btn-primary"
+                onClick={() => setScreen('registro')}
+              >
+                Registrarse
+              </button>
+            </>
+          )}
         </div>
       </header>
 
       {screen === 'inicio' ? <Home onNavigate={setScreen} /> : null}
       {screen === 'login' ? <Login onNavigate={setScreen} /> : null}
       {screen === 'registro' ? <Register onNavigate={setScreen} /> : null}
-      {screen === 'donar' ? <Donate /> : null}
-      {screen === 'solicitar' ? <NeedDonors /> : null}
+      {screen === 'donar' ? <Donate onNavigate={setScreen} /> : null}
+      {screen === 'solicitar' ? <NeedDonors onNavigate={setScreen} /> : null}
       {screen === 'sobre' ? <About onNavigate={setScreen} /> : null}
 
       <footer>

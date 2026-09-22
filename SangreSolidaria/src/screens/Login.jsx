@@ -1,17 +1,33 @@
 import { useState } from 'react'
+import { useAuth } from '../context/AuthContext.jsx'
 
 function Login({ onNavigate }) {
+  const { login } = useAuth()
   const [form, setForm] = useState({ email: '', password: '' })
   const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
 
   function handleChange(event) {
     const { name, value } = event.target
     setForm((current) => ({ ...current, [name]: value }))
   }
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) {
     event.preventDefault()
-    setMessage(`Bienvenido/a. Sesión iniciada con ${form.email}.`)
+    setError('')
+    setMessage('')
+    setLoading(true)
+
+    try {
+      const user = await login(form.email, form.password)
+      setMessage(`Bienvenido/a, ${user.nombre}.`)
+      window.setTimeout(() => onNavigate('inicio'), 800)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -19,10 +35,7 @@ function Login({ onNavigate }) {
       <div className="page-card">
         <span className="tag">Accedé a tu cuenta</span>
         <h1>Iniciar sesión</h1>
-        <p>
-          Ingresá para gestionar donaciones, solicitudes y
-          tu perfil.
-        </p>
+        <p>Ingresá el correo y la contraseña con los que te registraste.</p>
 
         <form className="form" onSubmit={handleSubmit}>
           <label>
@@ -44,16 +57,17 @@ function Login({ onNavigate }) {
               name="password"
               value={form.password}
               onChange={handleChange}
-              placeholder="••••••••"
+              placeholder="Tu contraseña"
               required
             />
           </label>
 
-          <button className="btn-primary" type="submit">
-            Iniciar sesión
+          <button className="btn-primary" type="submit" disabled={loading}>
+            {loading ? 'Ingresando...' : 'Iniciar sesión'}
           </button>
         </form>
 
+        {error ? <p className="form-error">{error}</p> : null}
         {message ? <p className="form-ok">{message}</p> : null}
 
         <p className="form-switch">

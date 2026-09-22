@@ -1,29 +1,49 @@
 import { useState } from 'react'
-
-const BLOOD_TYPES = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-']
+import { useAuth } from '../context/AuthContext.jsx'
+import { BLOOD_TYPES } from '../lib/catalog.js'
 
 function Register({ onNavigate }) {
+  const { register } = useAuth()
   const [form, setForm] = useState({
     name: '',
     email: '',
+    phone: '',
+    city: '',
+    birthDate: '',
     password: '',
-    bloodType: 'O+',
+    passwordConfirm: '',
+    bloodType: '',
     role: 'donante',
   })
   const [message, setMessage] = useState('')
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
 
   function handleChange(event) {
     const { name, value } = event.target
     setForm((current) => ({ ...current, [name]: value }))
   }
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) {
     event.preventDefault()
-    setMessage(
-      `Cuenta creada para ${form.name}. Ya podés ${
-        form.role === 'donante' ? 'hacer una donación' : 'pedir donantes'
-      }.`
-    )
+    setError('')
+    setMessage('')
+
+    if (form.password !== form.passwordConfirm) {
+      setError('Las contraseñas no coinciden.')
+      return
+    }
+
+    setLoading(true)
+
+    try {
+      const user = await register(form)
+      setMessage(`Cuenta creada para ${user.nombre}.`)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -32,8 +52,8 @@ function Register({ onNavigate }) {
         <span className="tag">Sumate a la red</span>
         <h1>Registrarse</h1>
         <p>
-          Creá tu perfil para donar sangre o publicar una
-          solicitud de donantes.
+          Creá tu perfil. Se guarda en la tabla usuarios y,
+          si elegís donar, también en donantes.
         </p>
 
         <form className="form" onSubmit={handleSubmit}>
@@ -75,19 +95,70 @@ function Register({ onNavigate }) {
           </label>
 
           <label>
-            Grupo sanguíneo
-            <select
-              name="bloodType"
-              value={form.bloodType}
+            Repetir contraseña
+            <input
+              type="password"
+              name="passwordConfirm"
+              value={form.passwordConfirm}
               onChange={handleChange}
-            >
-              {BLOOD_TYPES.map((type) => (
-                <option key={type} value={type}>
-                  {type}
-                </option>
-              ))}
-            </select>
+              placeholder="Repetí la contraseña"
+              minLength={8}
+              required
+            />
           </label>
+
+          <label>
+            Teléfono
+            <input
+              type="tel"
+              name="phone"
+              value={form.phone}
+              onChange={handleChange}
+              placeholder="Opcional"
+            />
+          </label>
+
+          <label>
+            Ciudad
+            <input
+              type="text"
+              name="city"
+              value={form.city}
+              onChange={handleChange}
+              placeholder="Ej: Buenos Aires"
+            />
+          </label>
+
+          <label>
+            Fecha de nacimiento
+            <input
+              type="date"
+              name="birthDate"
+              value={form.birthDate}
+              onChange={handleChange}
+            />
+          </label>
+
+          {form.role === 'donante' ? (
+            <label>
+              Grupo sanguíneo
+              <select
+                name="bloodType"
+                value={form.bloodType}
+                onChange={handleChange}
+                required
+              >
+                <option value="" disabled>
+                  Elegí tu grupo
+                </option>
+                {BLOOD_TYPES.map((type) => (
+                  <option key={type} value={type}>
+                    {type}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
 
           <fieldset className="role-options">
             <legend>Quiero</legend>
@@ -113,10 +184,12 @@ function Register({ onNavigate }) {
             </label>
           </fieldset>
 
-          <button className="btn-primary" type="submit">
-            Crear cuenta
+          <button className="btn-primary" type="submit" disabled={loading}>
+            {loading ? 'Creando cuenta...' : 'Crear cuenta'}
           </button>
         </form>
+
+        {error ? <p className="form-error">{error}</p> : null}
 
         {message ? (
           <div className="form-ok">
