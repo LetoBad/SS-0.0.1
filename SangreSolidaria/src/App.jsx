@@ -1,121 +1,131 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
+
 import './App.css'
 
 function App() {
-  const [count, setCount] = useState(0)
-
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
+    <div className="app">
+      <header className="navbar">
+        <a href="#" className="logo">
+          <span className="logo-icon">♥</span>
+          SangreSolidaria
+        </a>
+
+        <nav className="menu">
+          <a href="#inicio">Inicio</a>
+          <a href="#como-funciona">Cómo funciona</a>
+          <a href="#sobre">Sobre nosotros</a>
+        </nav>
+
+        <button className="btn-login">
+          Iniciar sesión
         </button>
-      </section>
+      </header>
 
-      <div className="ticks"></div>
+      <main>
+        <section className="hero" id="inicio">
+          <div className="hero-content">
+            <span className="tag">
+              ♥ Donar sangre salva vidas
+            </span>
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
+            <h1>
+              Una donación puede
+              <span> cambiar una vida.</span>
+            </h1>
 
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
+            <p>
+              Conectamos personas que necesitan sangre
+              con donantes solidarios. Tu ayuda puede
+              hacer la diferencia.
+            </p>
+
+            <div className="hero-buttons">
+              <button className="btn-primary">
+                Quiero ser donante
+              </button>
+
+              <button className="btn-secondary">
+                Necesito donantes
+              </button>
+            </div>
+
+            <div className="hero-note">
+              <span>♥</span>
+              Juntos podemos ayudar a más personas.
+            </div>
+          </div>
+
+          <div className="hero-image">
+            <div className="image-circle">
+              <div className="blood-drop">♥</div>
+            </div>
+
+            <div className="floating-card">
+              <span className="card-heart">♥</span>
+              <div>
+                <strong>Un gesto solidario</strong>
+                <p>Puede salvar una vida</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="how" id="como-funciona">
+          <span className="section-tag">SANGRESOLIDARIA</span>
+
+          <h2>Ayudar es más fácil de lo que pensás</h2>
+
+          <p className="section-description">
+            Tres simples pasos para conectar solidaridad
+            con quienes más lo necesitan.
+          </p>
+
+          <div className="steps">
+            <article className="step-card">
+              <div className="step-icon">01</div>
+              <h3>Registrate</h3>
+              <p>
+                Creá tu perfil y contanos si querés
+                donar sangre o necesitás ayuda.
+              </p>
+            </article>
+
+            <article className="step-card">
+              <div className="step-icon">02</div>
+              <h3>Encontrá ayuda</h3>
+              <p>
+                Consultá solicitudes y encontrá
+                personas que puedan ayudarte.
+              </p>
+            </article>
+
+            <article className="step-card">
+              <div className="step-icon">03</div>
+              <h3>Hacé la diferencia</h3>
+              <p>
+                Contactate y coordiná los siguientes
+                pasos con el centro de salud.
+              </p>
+            </article>
+          </div>
+        </section>
+
+        <section className="callout" id="sobre">
+          <h2>La solidaridad nos une.</h2>
+          <p>
+            Cada persona puede ser parte del cambio.
+            Sumate a SangreSolidaria.
+          </p>
+          <button className="btn-light">
+            Conocé más
+          </button>
+        </section>
+      </main>
+
+      <footer>
+        <p>© 2026 SangreSolidaria · Unimos vidas con solidaridad</p>
+      </footer>
+    </div>
   )
 }
 
