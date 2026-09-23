@@ -1,12 +1,15 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '../context/AuthContext.jsx'
-import { listActiveRequests, offerDonation } from '../lib/db.js'
+import DonorsMap from '../components/DonorsMap.jsx'
+import { listActiveRequests, listAvailableDonors, offerDonation } from '../lib/db.js'
 
 function Donate({ onNavigate }) {
   const { user } = useAuth()
   const [requests, setRequests] = useState([])
+  const [donors, setDonors] = useState([])
   const [notes, setNotes] = useState('')
   const [date, setDate] = useState('')
+  const [focusPlace, setFocusPlace] = useState('')
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -15,9 +18,13 @@ function Donate({ onNavigate }) {
     listActiveRequests()
       .then(setRequests)
       .catch((err) => setError(err.message))
+
+    listAvailableDonors()
+      .then(setDonors)
+      .catch(() => setDonors([]))
   }, [])
 
-  async function handleOffer(requestId) {
+  async function handleOffer(request) {
     if (!user?.donante_id) {
       setError('Necesitás una cuenta de donante para ofrecer sangre.')
       return
@@ -30,10 +37,13 @@ function Donate({ onNavigate }) {
     try {
       await offerDonation({
         donorId: user.donante_id,
-        requestId,
+        requestId: request.id,
         notes,
         date,
       })
+      setFocusPlace(
+        [request.hospital, request.ciudad].filter(Boolean).join(', ')
+      )
       setMessage('Donación registrada. El solicitante podrá verla.')
     } catch (err) {
       setError(err.message)
@@ -68,8 +78,9 @@ function Donate({ onNavigate }) {
         <span className="tag">Salvá una vida</span>
         <h1>Hacer una donación</h1>
         <p>
-          Elegí una solicitud activa. La donación se guarda
-          uniendo tu perfil de donante con esa solicitud.
+          Elegí una solicitud activa. El mapa muestra
+          donantes disponibles y los lugares de las
+          solicitudes.
         </p>
 
         {!user.donante_id ? (
@@ -78,6 +89,21 @@ function Donate({ onNavigate }) {
             como donante para poder ofrecer sangre.
           </p>
         ) : null}
+
+        <div className="map-legend">
+          <span>
+            <i className="dot dot-donor" /> Donantes disponibles
+          </span>
+          <span>
+            <i className="dot dot-request" /> Solicitudes
+          </span>
+        </div>
+
+        <DonorsMap
+          donors={donors}
+          requests={requests}
+          focusPlace={focusPlace}
+        />
 
         <form className="form" onSubmit={(event) => event.preventDefault()}>
           <label>
@@ -117,14 +143,29 @@ function Donate({ onNavigate }) {
                     {request.fecha_necesidad || 'Sin fecha'}
                   </p>
                 </div>
-                <button
-                  className="btn-primary"
-                  type="button"
-                  disabled={loading || !user.donante_id}
-                  onClick={() => handleOffer(request.id)}
-                >
-                  Ofrecer donación
-                </button>
+                <div className="request-actions">
+                  <button
+                    className="btn-secondary"
+                    type="button"
+                    onClick={() =>
+                      setFocusPlace(
+                        [request.hospital, request.ciudad]
+                          .filter(Boolean)
+                          .join(', ')
+                      )
+                    }
+                  >
+                    Ver en mapa
+                  </button>
+                  <button
+                    className="btn-primary"
+                    type="button"
+                    disabled={loading || !user.donante_id}
+                    onClick={() => handleOffer(request)}
+                  >
+                    Ofrecer donación
+                  </button>
+                </div>
               </article>
             ))
           )}

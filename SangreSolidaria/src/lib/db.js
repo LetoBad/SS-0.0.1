@@ -281,6 +281,29 @@ export async function listActiveRequests() {
   return data
 }
 
+export async function listAvailableDonors() {
+  const { data, error } = await supabase
+    .from('donantes')
+    .select(
+      `
+      id,
+      disponible,
+      grupos_sanguineos ( nombre ),
+      usuarios ( nombre, ciudad )
+    `
+    )
+    .eq('disponible', true)
+
+  throwIfError(error, 'No se pudieron cargar los donantes disponibles.')
+
+  return (data || []).map((donor) => ({
+    id: donor.id,
+    grupo: donor.grupos_sanguineos?.nombre || '',
+    nombre: donor.usuarios?.nombre || 'Donante',
+    ciudad: donor.usuarios?.ciudad || '',
+  }))
+}
+
 export async function offerDonation({ donorId, requestId, notes, date }) {
   const { data, error } = await supabase
     .from('donaciones')
