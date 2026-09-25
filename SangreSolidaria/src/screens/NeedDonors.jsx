@@ -1,22 +1,45 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useAuth } from '../context/AuthContext.jsx'
+import LocationPicker from '../components/LocationPicker.jsx'
 import { createBloodRequest } from '../lib/db.js'
 import { BLOOD_TYPES } from '../lib/catalog.js'
 
 function NeedDonors({ onNavigate }) {
   const { user } = useAuth()
   const [form, setForm] = useState({
-    patient: '',
-    bloodType: '',
+    patient: user?.nombre || '',
+    bloodType: user?.grupo || '',
     hospital: '',
-    city: '',
+    city: user?.ciudad || '',
     donorsNeeded: 1,
     neededDate: '',
-    details: '',
+    details: user?.telefono ? `Contacto: ${user.telefono}` : '',
+  })
+  const [coords, setCoords] = useState({
+    lat: user?.latitud ?? null,
+    lng: user?.longitud ?? null,
+    label: user?.ciudad || '',
   })
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (!user) return
+    setForm((current) => ({
+      ...current,
+      patient: current.patient || user.nombre || '',
+      bloodType: current.bloodType || user.grupo || '',
+      city: current.city || user.ciudad || '',
+      details:
+        current.details || (user.telefono ? `Contacto: ${user.telefono}` : ''),
+    }))
+    setCoords((current) => ({
+      lat: current.lat ?? user.latitud ?? null,
+      lng: current.lng ?? user.longitud ?? null,
+      label: current.label || user.ciudad || '',
+    }))
+  }, [user])
 
   function handleChange(event) {
     const { name, value } = event.target
@@ -27,15 +50,23 @@ function NeedDonors({ onNavigate }) {
     event.preventDefault()
     setError('')
     setMessage('')
+
+    if (coords.lat == null || coords.lng == null) {
+      setError('Usá tu ubicación actual para que el sistema pueda avisar a donantes cercanos.')
+      return
+    }
+
     setLoading(true)
 
     try {
-      await createBloodRequest({
+      const result = await createBloodRequest({
         usuarioId: user.id,
         ...form,
+        latitud: coords.lat,
+        longitud: coords.lng,
       })
       setMessage(
-        `Solicitud publicada para ${form.patient} (${form.bloodType}) en ${form.hospital}.`
+        `Solicitud publicada para ${form.patient} (${form.bloodType}) en ${form.hospital}. Se alertó a ${result.alerted} donante(s) compatible(s) dentro de su radio.`
       )
     } catch (err) {
       setError(err.message)
@@ -70,8 +101,8 @@ function NeedDonors({ onNavigate }) {
         <span className="tag">Pedí ayuda</span>
         <h1>Necesito donantes</h1>
         <p>
-          La solicitud se guarda en la tabla solicitudes,
-          con estado ACTIVA.
+          Completamos el formulario con tus datos de
+          registro. Podés cambiarlos si hace falta.
         </p>
 
         <form className="form" onSubmit={handleSubmit}>
@@ -129,6 +160,16 @@ function NeedDonors({ onNavigate }) {
               required
             />
           </label>
+
+          <LocationPicker
+            value={coords}
+            onChange={(place) => {
+              setCoords(place)
+              if (place.label) {
+                setForm((current) => ({ ...current, city: place.label }))
+              }
+            }}
+          />
 
           <label>
             Cantidad de donantes

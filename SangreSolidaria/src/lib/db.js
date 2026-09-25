@@ -1,4 +1,6 @@
 import { supabase } from '../supabase.js'
+import { canDonateTo } from './catalog.js'
+import { distanceKm, isWithinRadius } from './geo.js'
 
 const SESSION_KEY = 'ss_session'
 
@@ -23,9 +25,20 @@ export function clearSession() {
 }
 
 function throwIfError(error, fallback) {
-  if (error) {
-    throw new Error(error.message || fallback)
+  if (!error) return
+
+  const message = error.message || fallback
+  if (message.includes('schema cache') || message.includes('Could not find the')) {
+    throw new Error(
+      'Faltan las columnas de ubicación en Supabase. Ejecutá el archivo supabase-geo.sql en SQL Editor y después recargá el schema (NOTIFY pgrst, \'reload schema\';).'
+    )
   }
+
+  if (message.includes('uq_donante_solicitud')) {
+    throw new Error('Ya ofreciste donar para esta solicitud.')
+  }
+
+  throw new Error(message)
 }
 
 function bytesToHex(bytes) {
@@ -126,7 +139,9 @@ async function findStateId(name) {
 export async function getDonorByUserId(usuarioId) {
   const { data, error } = await supabase
     .from('donantes')
-    .select('id, usuario_id, grupo_sanguineo_id, disponible, ultima_donacion')
+    .select(
+      'id, usuario_id, grupo_sanguineo_id, disponible, ultima_donacion, latitud, longitud, radio_km, grupos_sanguineos ( nombre )'
+    )
     .eq('usuario_id', usuarioId)
     .maybeSingle()
 
@@ -154,6 +169,11 @@ async function buildSessionUser(usuario) {
     rol_id: usuario.rol_id,
     rol: role.nombre,
     donante_id: donor?.id ?? null,
+    grupo: donor?.grupos_sanguineos?.nombre || null,
+    latitud: donor?.latitud ?? usuario.latitud ?? null,
+    longitud: donor?.longitud ?? usuario.longitud ?? null,
+    radio_km: donor?.radio_km != null ? Number(donor.radio_km) : 5,
+    disponible: donor?.disponible ?? false,
   }
 }
 
@@ -166,6 +186,8 @@ export async function registerUser({
   birthDate,
   role,
   bloodType,
+  latitud,
+  longitud,
 }) {
   if (!password || password.length < 8) {
     throw new Error('La contraseña debe tener al menos 8 caracteres.')
@@ -197,6 +219,9 @@ export async function registerUser({
       usuario_id: usuario.id,
       grupo_sanguineo_id: grupoId,
       disponible: true,
+      latitud: latitud ?? null,
+      longitud: longitud ?? null,
+      radio_km: 5,
     })
 
     throwIfError(donorError, 'El usuario se creó, pero no el perfil de donante.')
@@ -246,7 +271,13 @@ export async function createBloodRequest({
   donorsNeeded,
   neededDate,
   details,
+  latitud,
+  longitud,
 }) {
+  if (latitud == null || longitud == null) {
+    throw new Error('La solicitud necesita una ubicación para alertar donantes cercanos.')
+  }
+
   const grupoId = await findBloodGroupId(bloodType)
   const estadoId = await findStateId('ACTIVA')
 
@@ -262,12 +293,22 @@ export async function createBloodRequest({
       ciudad: city,
       fecha_necesidad: neededDate || null,
       descripcion: details || null,
+      latitud,
+      longitud,
     })
     .select()
     .single()
 
   throwIfError(error, 'No se pudo publicar la solicitud.')
-  return data
+
+  const alerted = await notifyEligibleDonors({
+    request: data,
+    bloodType,
+    hospital,
+    city,
+  })
+
+  return { request: data, alerted }
 }
 
 export async function listActiveRequests() {
@@ -288,8 +329,11 @@ export async function listAvailableDonors() {
       `
       id,
       disponible,
+      latitud,
+      longitud,
+      radio_km,
       grupos_sanguineos ( nombre ),
-      usuarios ( nombre, ciudad )
+      usuarios ( id, nombre, ciudad, activo )
     `
     )
     .eq('disponible', true)
@@ -301,23 +345,214 @@ export async function listAvailableDonors() {
     grupo: donor.grupos_sanguineos?.nombre || '',
     nombre: donor.usuarios?.nombre || 'Donante',
     ciudad: donor.usuarios?.ciudad || '',
+    latitud: donor.latitud,
+    longitud: donor.longitud,
+    radio_km: donor.radio_km != null ? Number(donor.radio_km) : 5,
+    activo: donor.usuarios?.activo !== false,
+    usuario_id: donor.usuarios?.id,
   }))
 }
 
-export async function offerDonation({ donorId, requestId, notes, date }) {
-  const { data, error } = await supabase
-    .from('donaciones')
-    .insert({
-      donante_id: donorId,
-      solicitud_id: requestId,
-      estado: 'registrada',
-      fecha_donacion: date || null,
-      observaciones: notes || null,
+async function notifyEligibleDonors({ request, bloodType, hospital, city }) {
+  const donors = await listAvailableDonors()
+  const requestPoint = { lat: Number(request.latitud), lng: Number(request.longitud) }
+  let alerted = 0
+
+  for (const donor of donors) {
+    if (!donor.activo || !donor.usuario_id) continue
+    if (!canDonateTo(donor.grupo, bloodType)) continue
+    if (donor.latitud == null || donor.longitud == null) continue
+
+    const donorPoint = { lat: Number(donor.latitud), lng: Number(donor.longitud) }
+    const km = distanceKm(donorPoint, requestPoint)
+    if (!isWithinRadius(donorPoint, requestPoint, donor.radio_km)) continue
+
+    const { error } = await supabase.from('notificaciones').insert({
+      usuario_id: donor.usuario_id,
+      titulo: 'Solicitud cercana compatible',
+      mensaje: `Hay un pedido de ${bloodType} a ${km.toFixed(1)} km (${hospital}, ${city}). Está dentro de tu radio de ${donor.radio_km} km.`,
+      tipo: 'alerta_proximidad',
+      solicitud_id: request.id,
     })
-    .select()
+
+    if (!error) {
+      alerted += 1
+    }
+  }
+
+  return alerted
+}
+
+export async function saveDonorLocation({
+  donorId,
+  userId,
+  latitud,
+  longitud,
+  radioKm,
+  ciudad,
+}) {
+  const { error } = await supabase
+    .from('donantes')
+    .update({
+      latitud,
+      longitud,
+      radio_km: Number(radioKm),
+      actualizado_en: new Date().toISOString(),
+    })
+    .eq('id', donorId)
+
+  throwIfError(error, 'No se pudo guardar tu ubicación.')
+
+  if (userId && ciudad) {
+    await supabase
+      .from('usuarios')
+      .update({
+        ciudad,
+        actualizado_en: new Date().toISOString(),
+      })
+      .eq('id', userId)
+  }
+}
+
+export async function completeUserProfile({
+  userId,
+  donorId,
+  phone,
+  city,
+  latitud,
+  longitud,
+  radioKm,
+}) {
+  if (latitud == null || longitud == null) {
+    throw new Error('Elegí país y localidad para continuar.')
+  }
+
+  let { error } = await supabase
+    .from('usuarios')
+    .update({
+      telefono: phone || null,
+      ciudad: city || null,
+      latitud,
+      longitud,
+      actualizado_en: new Date().toISOString(),
+    })
+    .eq('id', userId)
+
+  if (error && (error.message.includes('schema cache') || error.message.includes('latitud'))) {
+    const retry = await supabase
+      .from('usuarios')
+      .update({
+        telefono: phone || null,
+        ciudad: city || null,
+        actualizado_en: new Date().toISOString(),
+      })
+      .eq('id', userId)
+    error = retry.error
+  }
+
+  throwIfError(error, 'No se pudieron guardar tus datos.')
+
+  if (donorId) {
+    await saveDonorLocation({
+      donorId,
+      userId,
+      latitud,
+      longitud,
+      radioKm: radioKm || 5,
+      ciudad,
+    })
+  }
+
+  const sessionUser = await refreshSessionUser(userId)
+  const withCoords = {
+    ...sessionUser,
+    telefono: phone || sessionUser.telefono,
+    ciudad: city || sessionUser.ciudad,
+    latitud: latitud ?? sessionUser.latitud,
+    longitud: longitud ?? sessionUser.longitud,
+    radio_km: radioKm ? Number(radioKm) : sessionUser.radio_km,
+  }
+  saveSession(withCoords)
+  return withCoords
+}
+
+export async function listDonorAlerts(usuarioId) {
+  const { data, error } = await supabase
+    .from('notificaciones')
+    .select('*')
+    .eq('usuario_id', usuarioId)
+    .order('creado_en', { ascending: false })
+
+  throwIfError(error, 'No se pudieron cargar las alertas.')
+  return data || []
+}
+
+export async function markAlertRead(id) {
+  const { error } = await supabase
+    .from('notificaciones')
+    .update({ leida: true })
+    .eq('id', id)
+
+  throwIfError(error, 'No se pudo marcar la alerta como leída.')
+}
+
+export async function refreshSessionUser(userId) {
+  const { data: usuario, error } = await supabase
+    .from('usuarios')
+    .select('*')
+    .eq('id', userId)
     .single()
 
-  throwIfError(error, 'No se pudo registrar la donación.')
+  throwIfError(error, 'No se pudo actualizar la sesión.')
+  const sessionUser = await buildSessionUser(usuario)
+  saveSession(sessionUser)
+  return sessionUser
+}
+
+export async function offerDonation({ donorId, requestId, notes, date }) {
+  const payload = {
+    donante_id: donorId,
+    solicitud_id: requestId,
+    estado: 'registrada',
+    fecha_donacion: date || null,
+    observaciones: notes || null,
+    actualizado_en: new Date().toISOString(),
+  }
+
+  const { data: existing, error: lookupError } = await supabase
+    .from('donaciones')
+    .select('id')
+    .eq('donante_id', donorId)
+    .eq('solicitud_id', requestId)
+    .maybeSingle()
+
+  throwIfError(lookupError, 'No se pudo consultar la donación.')
+
+  let data
+  if (existing) {
+    const { data: updated, error } = await supabase
+      .from('donaciones')
+      .update({
+        fecha_donacion: payload.fecha_donacion,
+        observaciones: payload.observaciones,
+        actualizado_en: payload.actualizado_en,
+      })
+      .eq('id', existing.id)
+      .select()
+      .single()
+
+    throwIfError(error, 'No se pudo actualizar la donación.')
+    data = { ...updated, alreadyOffered: true }
+  } else {
+    const { data: created, error } = await supabase
+      .from('donaciones')
+      .insert(payload)
+      .select()
+      .single()
+
+    throwIfError(error, 'No se pudo registrar la donación.')
+    data = created
+  }
 
   await supabase
     .from('donantes')

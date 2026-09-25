@@ -6,7 +6,7 @@ import {
   loadGoogleMaps,
 } from '../lib/maps.js'
 
-function DonorsMap({ donors, requests, focusPlace }) {
+function DonorsMap({ donors, requests, focusCoords }) {
   const mapRef = useRef(null)
   const mapInstance = useRef(null)
   const markersRef = useRef([])
@@ -70,10 +70,7 @@ function DonorsMap({ donors, requests, focusPlace }) {
       const bounds = new window.google.maps.LatLngBounds()
       let hasPoints = false
 
-      async function addMarker({ query, title, color }) {
-        const position = await geocodePlace(query)
-        if (!position || cancelled) return
-
+      function placeMarker({ position, title, color, subtitle }) {
         const marker = new window.google.maps.Marker({
           map,
           position,
@@ -89,7 +86,7 @@ function DonorsMap({ donors, requests, focusPlace }) {
         })
 
         const info = new window.google.maps.InfoWindow({
-          content: `<strong>${title}</strong><p style="margin:6px 0 0;color:#555">${query}</p>`,
+          content: `<strong>${title}</strong><p style="margin:6px 0 0;color:#555">${subtitle || ''}</p>`,
         })
 
         marker.addListener('click', () => info.open({ map, anchor: marker }))
@@ -98,34 +95,51 @@ function DonorsMap({ donors, requests, focusPlace }) {
         hasPoints = true
       }
 
+      async function resolvePosition({ latitud, longitud, query }) {
+        if (latitud != null && longitud != null) {
+          return { lat: Number(latitud), lng: Number(longitud) }
+        }
+        if (!query) return null
+        return geocodePlace(query)
+      }
+
       for (const donor of donors) {
-        if (!donor.ciudad) continue
-        await addMarker({
+        const position = await resolvePosition({
+          latitud: donor.latitud,
+          longitud: donor.longitud,
           query: donor.ciudad,
+        })
+        if (!position || cancelled) continue
+        placeMarker({
+          position,
           title: `Donante disponible · ${donor.grupo || 'Grupo s/d'}`,
+          subtitle: donor.ciudad || 'Ubicación GPS',
           color: '#2e7d4f',
         })
       }
 
       for (const request of requests) {
         const query = [request.hospital, request.ciudad].filter(Boolean).join(', ')
-        if (!query) continue
-        await addMarker({
+        const position = await resolvePosition({
+          latitud: request.latitud,
+          longitud: request.longitud,
           query,
+        })
+        if (!position || cancelled) continue
+        placeMarker({
+          position,
           title: `Solicitud · ${request.nombre_paciente} · ${request.grupo_sanguineo}`,
+          subtitle: query,
           color: '#c62843',
         })
       }
 
       if (cancelled) return
 
-      if (focusPlace) {
-        const focused = await geocodePlace(focusPlace)
-        if (focused) {
-          map.panTo(focused)
-          map.setZoom(12)
-          return
-        }
+      if (focusCoords?.lat != null && focusCoords?.lng != null) {
+        map.panTo({ lat: Number(focusCoords.lat), lng: Number(focusCoords.lng) })
+        map.setZoom(12)
+        return
       }
 
       if (hasPoints) {
@@ -138,7 +152,7 @@ function DonorsMap({ donors, requests, focusPlace }) {
     return () => {
       cancelled = true
     }
-  }, [donors, requests, focusPlace, status])
+  }, [donors, requests, focusCoords, status])
 
   if (status === 'missing-key') {
     return (

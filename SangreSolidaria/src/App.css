@@ -477,6 +477,63 @@ a {
   background: #c62843;
 }
 
+.location-section {
+  margin-top: 24px;
+  padding: 20px;
+  border: 1px solid #f0e1e3;
+  border-radius: 14px;
+}
+
+.location-section h3 {
+  margin-bottom: 10px;
+}
+
+.location-section .btn-primary {
+  margin-top: 14px;
+}
+
+.location-box {
+  display: grid;
+  gap: 12px;
+  margin: 12px 0;
+}
+
+.location-coords {
+  color: #1f6b3a;
+  font-size: 14px;
+}
+
+.place-results {
+  list-style: none;
+  border: 1px solid #f0e1e3;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.place-results button {
+  width: 100%;
+  padding: 12px 14px;
+  text-align: left;
+  background: white;
+  border-bottom: 1px solid #f0e1e3;
+}
+
+.place-results li:last-child button {
+  border-bottom: none;
+}
+
+.place-results button:hover {
+  background: #fff8f8;
+}
+
+.link-button {
+  background: none;
+  border: none;
+  color: #c62843;
+  font-weight: bold;
+  padding: 0;
+}
+
 .form-ok .btn-secondary {
   margin-top: 12px;
 }

@@ -15,7 +15,6 @@ function Register({ onNavigate }) {
     bloodType: '',
     role: 'donante',
   })
-  const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
@@ -27,7 +26,6 @@ function Register({ onNavigate }) {
   async function handleSubmit(event) {
     event.preventDefault()
     setError('')
-    setMessage('')
 
     if (form.password !== form.passwordConfirm) {
       setError('Las contraseñas no coinciden.')
@@ -37,8 +35,8 @@ function Register({ onNavigate }) {
     setLoading(true)
 
     try {
-      const user = await register(form)
-      setMessage(`Cuenta creada para ${user.nombre}.`)
+      await register(form)
+      onNavigate('completar')
     } catch (err) {
       setError(err.message)
     } finally {
@@ -52,8 +50,8 @@ function Register({ onNavigate }) {
         <span className="tag">Sumate a la red</span>
         <h1>Registrarse</h1>
         <p>
-          Creá tu perfil. Se guarda en la tabla usuarios y,
-          si elegís donar, también en donantes.
+          Primero creá tu cuenta. En el siguiente paso vas a
+          completar país y localidad.
         </p>
 
         <form className="form" onSubmit={handleSubmit}>
@@ -119,17 +117,6 @@ function Register({ onNavigate }) {
           </label>
 
           <label>
-            Ciudad
-            <input
-              type="text"
-              name="city"
-              value={form.city}
-              onChange={handleChange}
-              placeholder="Ej: Buenos Aires"
-            />
-          </label>
-
-          <label>
             Fecha de nacimiento
             <input
               type="date"
@@ -190,21 +177,6 @@ function Register({ onNavigate }) {
         </form>
 
         {error ? <p className="form-error">{error}</p> : null}
-
-        {message ? (
-          <div className="form-ok">
-            <p>{message}</p>
-            <button
-              className="btn-secondary"
-              type="button"
-              onClick={() =>
-                onNavigate(form.role === 'donante' ? 'donar' : 'solicitar')
-              }
-            >
-              Continuar
-            </button>
-          </div>
-        ) : null}
 
         <p className="form-switch">
           ¿Ya tenés cuenta?{' '}

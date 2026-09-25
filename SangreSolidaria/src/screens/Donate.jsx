@@ -1,7 +1,13 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '../context/AuthContext.jsx'
 import DonorsMap from '../components/DonorsMap.jsx'
-import { listActiveRequests, listAvailableDonors, offerDonation } from '../lib/db.js'
+import {
+  listActiveRequests,
+  listAvailableDonors,
+  offerDonation,
+} from '../lib/db.js'
+import { canDonateTo } from '../lib/catalog.js'
+import { distanceKm, formatKm, isWithinRadius } from '../lib/geo.js'
 
 function Donate({ onNavigate }) {
   const { user } = useAuth()
@@ -9,7 +15,7 @@ function Donate({ onNavigate }) {
   const [donors, setDonors] = useState([])
   const [notes, setNotes] = useState('')
   const [date, setDate] = useState('')
-  const [focusPlace, setFocusPlace] = useState('')
+  const [focusCoords, setFocusCoords] = useState(null)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -35,16 +41,20 @@ function Donate({ onNavigate }) {
     setLoading(true)
 
     try {
-      await offerDonation({
+      const donation = await offerDonation({
         donorId: user.donante_id,
         requestId: request.id,
         notes,
         date,
       })
-      setFocusPlace(
-        [request.hospital, request.ciudad].filter(Boolean).join(', ')
+      if (request.latitud != null && request.longitud != null) {
+        setFocusCoords({ lat: request.latitud, lng: request.longitud })
+      }
+      setMessage(
+        donation.alreadyOffered
+          ? 'Ya habías ofrecido donar para esta solicitud. Actualizamos tus datos.'
+          : 'Donación registrada. El solicitante podrá verla.'
       )
-      setMessage('Donación registrada. El solicitante podrá verla.')
     } catch (err) {
       setError(err.message)
     } finally {
@@ -72,15 +82,20 @@ function Donate({ onNavigate }) {
     )
   }
 
+  const donorPoint =
+    user.latitud != null && user.longitud != null
+      ? { lat: Number(user.latitud), lng: Number(user.longitud) }
+      : null
+  const radiusKm = user.radio_km || 5
+
   return (
     <main className="page">
       <div className="page-card page-wide">
         <span className="tag">Salvá una vida</span>
         <h1>Hacer una donación</h1>
         <p>
-          Elegí una solicitud activa. El mapa muestra
-          donantes disponibles y los lugares de las
-          solicitudes.
+          Elegí una solicitud activa. Tu radio y ubicación
+          se configuran en el perfil.
         </p>
 
         {!user.donante_id ? (
@@ -88,7 +103,14 @@ function Donate({ onNavigate }) {
             Tu cuenta no tiene perfil de donante. Registrate
             como donante para poder ofrecer sangre.
           </p>
-        ) : null}
+        ) : (
+          <p className="muted">
+            Radio actual: {user.radio_km || 5} km.{' '}
+            <button type="button" className="link-button" onClick={() => onNavigate('perfil')}>
+              Cambiar en mi perfil
+            </button>
+          </p>
+        )}
 
         <div className="map-legend">
           <span>
@@ -102,7 +124,7 @@ function Donate({ onNavigate }) {
         <DonorsMap
           donors={donors}
           requests={requests}
-          focusPlace={focusPlace}
+          focusCoords={focusCoords}
         />
 
         <form className="form" onSubmit={(event) => event.preventDefault()}>
@@ -129,45 +151,61 @@ function Donate({ onNavigate }) {
           {requests.length === 0 ? (
             <p className="muted">No hay solicitudes activas por ahora.</p>
           ) : (
-            requests.map((request) => (
-              <article key={request.id} className="request-card">
-                <div>
-                  <strong>
-                    {request.nombre_paciente} · {request.grupo_sanguineo}
-                  </strong>
-                  <p>
-                    {request.hospital} · {request.ciudad}
-                  </p>
-                  <p>
-                    {request.cantidad_donantes} donante(s) ·{' '}
-                    {request.fecha_necesidad || 'Sin fecha'}
-                  </p>
-                </div>
-                <div className="request-actions">
-                  <button
-                    className="btn-secondary"
-                    type="button"
-                    onClick={() =>
-                      setFocusPlace(
-                        [request.hospital, request.ciudad]
-                          .filter(Boolean)
-                          .join(', ')
-                      )
-                    }
-                  >
-                    Ver en mapa
-                  </button>
-                  <button
-                    className="btn-primary"
-                    type="button"
-                    disabled={loading || !user.donante_id}
-                    onClick={() => handleOffer(request)}
-                  >
-                    Ofrecer donación
-                  </button>
-                </div>
-              </article>
-            ))
+            requests.map((request) => {
+              const requestPoint =
+                request.latitud != null && request.longitud != null
+                  ? { lat: Number(request.latitud), lng: Number(request.longitud) }
+                  : null
+              const km = donorPoint && requestPoint
+                ? distanceKm(donorPoint, requestPoint)
+                : null
+              const compatible = canDonateTo(user.grupo, request.grupo_sanguineo)
+              const inside = donorPoint && requestPoint
+                ? isWithinRadius(donorPoint, requestPoint, radiusKm)
+                : false
+
+              return (
+                <article key={request.id} className="request-card">
+                  <div>
+                    <strong>
+                      {request.nombre_paciente} · {request.grupo_sanguineo}
+                    </strong>
+                    <p>
+                      {request.hospital} · {request.ciudad}
+                    </p>
+                    <p>
+                      {request.cantidad_donantes} donante(s) ·{' '}
+                      {request.fecha_necesidad || 'Sin fecha'}
+                    </p>
+                    <p>
+                      Distancia: {formatKm(km)}
+                      {inside && compatible ? ' · Dentro de tu radio' : ''}
+                    </p>
+                  </div>
+                  <div className="request-actions">
+                    <button
+                      className="btn-secondary"
+                      type="button"
+                      onClick={() =>
+                        setFocusCoords(
+                          requestPoint || null
+                        )
+                      }
+                    >
+                      Ver en mapa
+                    </button>
+                    <button
+                      className="btn-primary"
+                      type="button"
+                      disabled={loading || !user.donante_id}
+                      onClick={() => handleOffer(request)}
+                    >
+                      Ofrecer donación
+                    </button>
+                  </div>
+                </article>
+              )
+            })
           )}
         </div>
 

@@ -53,28 +53,50 @@ export function loadGoogleMaps() {
 
 const geocodeCache = new Map()
 
-export async function geocodePlace(query) {
-  if (!query) return null
-  if (geocodeCache.has(query)) {
-    return geocodeCache.get(query)
+export async function geocodePlace(query, countryCode) {
+  const results = await searchPlaces(query, countryCode)
+  return results[0] || null
+}
+
+export async function searchPlaces(query, countryCode) {
+  if (!query) return []
+
+  const cacheKey = `${countryCode || 'WW'}:${query.trim().toLowerCase()}`
+  if (geocodeCache.has(cacheKey)) {
+    return geocodeCache.get(cacheKey)
   }
 
   const maps = await loadGoogleMaps()
   const geocoder = new maps.Geocoder()
 
-  const result = await new Promise((resolve) => {
-    geocoder.geocode({ address: `${query}, Argentina` }, (results, status) => {
-      if (status === 'OK' && results[0]) {
-        const location = results[0].geometry.location
-        resolve({ lat: location.lat(), lng: location.lng() })
+  const results = await new Promise((resolve) => {
+    const request = {
+      address: query,
+    }
+
+    if (countryCode) {
+      request.componentRestrictions = { country: countryCode }
+      request.region = countryCode
+    }
+
+    geocoder.geocode(request, (items, status) => {
+      if (status !== 'OK' || !items?.length) {
+        resolve([])
         return
       }
-      resolve(null)
+
+      resolve(
+        items.map((item) => ({
+          label: item.formatted_address,
+          lat: item.geometry.location.lat(),
+          lng: item.geometry.location.lng(),
+        }))
+      )
     })
   })
 
-  geocodeCache.set(query, result)
-  return result
+  geocodeCache.set(cacheKey, results)
+  return results
 }
 
 export { ARGENTINA_CENTER }
