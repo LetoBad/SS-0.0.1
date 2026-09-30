@@ -1,8 +1,12 @@
 import { useEffect, useState } from 'react'
 import { useAuth } from '../context/AuthContext.jsx'
-import { listDonorAlerts, markAlertRead } from '../lib/db.js'
+import {
+  findConversationForAlert,
+  listDonorAlerts,
+  markAlertRead,
+} from '../lib/db.js'
 
-function Alerts({ onNavigate }) {
+function Alerts({ onNavigate, onOpenChat }) {
   const { user } = useAuth()
   const [alerts, setAlerts] = useState([])
   const [error, setError] = useState('')
@@ -13,6 +17,23 @@ function Alerts({ onNavigate }) {
       .then(setAlerts)
       .catch((err) => setError(err.message))
   }, [user])
+
+  async function handleOpenChat(alert) {
+    try {
+      const chat = await findConversationForAlert({
+        userId: user.id,
+        conversationId: alert.conversacion_id,
+        requestId: alert.solicitud_id,
+      })
+      if (!chat) {
+        setError('El chat todavía no está desbloqueado para esta petición.')
+        return
+      }
+      onOpenChat(chat.id)
+    } catch (err) {
+      setError(err.message)
+    }
+  }
 
   async function handleRead(id) {
     try {
@@ -32,7 +53,7 @@ function Alerts({ onNavigate }) {
       <main className="page">
         <div className="page-card">
           <h1>Alertas</h1>
-          <p>Iniciá sesión para ver las solicitudes cercanas.</p>
+          <p>Iniciá sesión para ver si aceptaron tu petición o si hay solicitudes cercanas.</p>
           <button className="btn-primary" onClick={() => onNavigate('login')}>
             Iniciar sesión
           </button>
@@ -44,11 +65,12 @@ function Alerts({ onNavigate }) {
   return (
     <main className="page">
       <div className="page-card page-wide">
-        <span className="tag">Avisos de proximidad</span>
+        <span className="tag">Avisos</span>
         <h1>Alertas</h1>
         <p>
-          Solo aparecen solicitudes compatibles que están
-          dentro del radio que configuraste.
+          Acá ves si un donante aceptó tu petición de
+          sangre y, si donás, las solicitudes compatibles
+          dentro de tu radio.
         </p>
 
         {error ? <p className="form-error">{error}</p> : null}
@@ -62,17 +84,34 @@ function Alerts({ onNavigate }) {
                 <div>
                   <strong>{alert.titulo}</strong>
                   <p>{alert.mensaje}</p>
-                  <p>{alert.leida ? 'Leída' : 'Nueva'}</p>
+                  <p>
+                    {alert.tipo === 'peticion_aceptada'
+                      ? 'Petición aceptada'
+                      : 'Proximidad'}
+                    {' · '}
+                    {alert.leida ? 'Leída' : 'Nueva'}
+                  </p>
                 </div>
-                {!alert.leida ? (
-                  <button
-                    className="btn-secondary"
-                    type="button"
-                    onClick={() => handleRead(alert.id)}
-                  >
-                    Marcar como leída
-                  </button>
-                ) : null}
+                <div className="request-actions">
+                  {alert.tipo === 'peticion_aceptada' ? (
+                    <button
+                      className="btn-primary"
+                      type="button"
+                      onClick={() => handleOpenChat(alert)}
+                    >
+                      Abrir chat
+                    </button>
+                  ) : null}
+                  {!alert.leida ? (
+                    <button
+                      className="btn-secondary"
+                      type="button"
+                      onClick={() => handleRead(alert.id)}
+                    >
+                      Marcar como leída
+                    </button>
+                  ) : null}
+                </div>
               </article>
             ))
           )}

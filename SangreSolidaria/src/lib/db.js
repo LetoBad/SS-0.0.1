@@ -28,6 +28,16 @@ function throwIfError(error, fallback) {
   if (!error) return
 
   const message = error.message || fallback
+  if (
+    message.includes('conversaciones') ||
+    message.includes('mensajes_chat') ||
+    message.includes('conversacion_id')
+  ) {
+    throw new Error(
+      'Falta el chat en Supabase. Ejecutá el archivo supabase-chat.sql en SQL Editor y después recargá el schema (NOTIFY pgrst, \'reload schema\';).'
+    )
+  }
+
   if (message.includes('schema cache') || message.includes('Could not find the')) {
     throw new Error(
       'Faltan las columnas de ubicación en Supabase. Ejecutá el archivo supabase-geo.sql en SQL Editor y después recargá el schema (NOTIFY pgrst, \'reload schema\';).'
@@ -396,7 +406,7 @@ export async function saveDonorLocation({
     .update({
       latitud,
       longitud,
-      radio_km: Number(radioKm),
+      radio_km: Number(radioKm || 5),
       actualizado_en: new Date().toISOString(),
     })
     .eq('id', donorId)
@@ -459,7 +469,7 @@ export async function completeUserProfile({
       latitud,
       longitud,
       radioKm: radioKm || 5,
-      ciudad,
+      ciudad: city,
     })
   }
 
@@ -485,6 +495,322 @@ export async function listDonorAlerts(usuarioId) {
 
   throwIfError(error, 'No se pudieron cargar las alertas.')
   return data || []
+}
+
+export async function countUnreadAlerts(usuarioId) {
+  const { count, error } = await supabase
+    .from('notificaciones')
+    .select('*', { count: 'exact', head: true })
+    .eq('usuario_id', usuarioId)
+    .eq('leida', false)
+
+  throwIfError(error, 'No se pudieron contar las alertas.')
+  return count || 0
+}
+
+async function loadUserNames(ids) {
+  const unique = [...new Set(ids.filter(Boolean))]
+  if (unique.length === 0) return {}
+
+  const { data, error } = await supabase
+    .from('usuarios')
+    .select('id, nombre')
+    .in('id', unique)
+
+  throwIfError(error, 'No se pudieron cargar los nombres del chat.')
+
+  return Object.fromEntries((data || []).map((row) => [row.id, row.nombre]))
+}
+
+function mapConversation(row, names = {}) {
+  return {
+    id: row.id,
+    donacion_id: row.donacion_id,
+    solicitud_id: row.solicitud_id,
+    donante_usuario_id: row.donante_usuario_id,
+    receptor_usuario_id: row.receptor_usuario_id,
+    donante_nombre: names[row.donante_usuario_id] || 'Donante',
+    receptor_nombre: names[row.receptor_usuario_id] || 'Receptor',
+    nombre_paciente: row.solicitudes?.nombre_paciente || 'Paciente',
+    hospital: row.solicitudes?.hospital || '',
+    ciudad: row.solicitudes?.ciudad || '',
+    creado_en: row.creado_en,
+  }
+}
+
+async function unlockConversation({ donationId, donorId, requestId }) {
+  const { data: existing, error: existingError } = await supabase
+    .from('conversaciones')
+    .select(
+      `
+      id,
+      donacion_id,
+      solicitud_id,
+      donante_usuario_id,
+      receptor_usuario_id,
+      creado_en,
+      solicitudes ( nombre_paciente, hospital, ciudad )
+    `
+    )
+    .eq('donacion_id', donationId)
+    .maybeSingle()
+
+  throwIfError(existingError, 'No se pudo abrir el chat.')
+
+  if (existing) {
+    const names = await loadUserNames([
+      existing.donante_usuario_id,
+      existing.receptor_usuario_id,
+    ])
+    return mapConversation(existing, names)
+  }
+
+  const { data: request, error: requestError } = await supabase
+    .from('solicitudes')
+    .select('id, usuario_id, nombre_paciente, hospital, ciudad')
+    .eq('id', requestId)
+    .single()
+
+  throwIfError(requestError, 'No se pudo abrir el chat.')
+
+  const { data: donor, error: donorError } = await supabase
+    .from('donantes')
+    .select('id, usuario_id')
+    .eq('id', donorId)
+    .single()
+
+  throwIfError(donorError, 'No se pudo abrir el chat.')
+
+  if (!request?.usuario_id || !donor?.usuario_id) return null
+  if (request.usuario_id === donor.usuario_id) return null
+
+  const { data: created, error } = await supabase
+    .from('conversaciones')
+    .insert({
+      donacion_id: donationId,
+      solicitud_id: requestId,
+      donante_usuario_id: donor.usuario_id,
+      receptor_usuario_id: request.usuario_id,
+    })
+    .select(
+      `
+      id,
+      donacion_id,
+      solicitud_id,
+      donante_usuario_id,
+      receptor_usuario_id,
+      creado_en,
+      solicitudes ( nombre_paciente, hospital, ciudad )
+    `
+    )
+    .single()
+
+  throwIfError(error, 'No se pudo desbloquear el chat.')
+
+  const names = await loadUserNames([
+    created.donante_usuario_id,
+    created.receptor_usuario_id,
+  ])
+  return mapConversation(created, names)
+}
+
+async function notifyRecipientOfAcceptance({
+  donorId,
+  requestId,
+  notes,
+  date,
+  conversationId,
+}) {
+  const { data: request, error: requestError } = await supabase
+    .from('solicitudes')
+    .select('id, usuario_id, nombre_paciente, hospital, ciudad')
+    .eq('id', requestId)
+    .single()
+
+  throwIfError(requestError, 'No se pudo avisar al receptor.')
+  if (!request?.usuario_id) return
+
+  const { data: donor, error: donorError } = await supabase
+    .from('donantes')
+    .select('id, usuarios ( id, nombre, telefono )')
+    .eq('id', donorId)
+    .single()
+
+  throwIfError(donorError, 'No se pudo avisar al receptor.')
+
+  if (donor?.usuarios?.id && donor.usuarios.id === request.usuario_id) {
+    return
+  }
+
+  const donorName = donor?.usuarios?.nombre || 'Un donante'
+  const phone = donor?.usuarios?.telefono
+  const when = date ? ` Disponible el ${date}.` : ''
+  const contact = phone ? ` Teléfono: ${phone}.` : ''
+  const extra = notes ? ` Comentario: ${notes}` : ''
+
+  const payload = {
+    usuario_id: request.usuario_id,
+    titulo: 'Un donante aceptó tu petición',
+    mensaje: `${donorName} se ofreció a donar para ${request.nombre_paciente} en ${request.hospital}, ${request.ciudad}.${when}${contact}${extra} Ya podés chatear para coordinar.`,
+    tipo: 'peticion_aceptada',
+    solicitud_id: request.id,
+    conversacion_id: conversationId || null,
+  }
+
+  let { error } = await supabase.from('notificaciones').insert(payload)
+
+  if (error && (error.message.includes('conversacion_id') || error.message.includes('schema cache'))) {
+    const retry = { ...payload }
+    delete retry.conversacion_id
+    const second = await supabase.from('notificaciones').insert(retry)
+    error = second.error
+  }
+
+  throwIfError(error, 'Se registró la donación, pero no se pudo avisar al receptor.')
+}
+
+export async function listMyConversations(userId) {
+  const { data, error } = await supabase
+    .from('conversaciones')
+    .select(
+      `
+      id,
+      donacion_id,
+      solicitud_id,
+      donante_usuario_id,
+      receptor_usuario_id,
+      creado_en,
+      solicitudes ( nombre_paciente, hospital, ciudad )
+    `
+    )
+    .or(`donante_usuario_id.eq.${userId},receptor_usuario_id.eq.${userId}`)
+    .order('creado_en', { ascending: false })
+
+  throwIfError(error, 'No se pudieron cargar los chats.')
+
+  const rows = data || []
+  const names = await loadUserNames(
+    rows.flatMap((row) => [row.donante_usuario_id, row.receptor_usuario_id])
+  )
+
+  const ids = rows.map((row) => row.id)
+  let messages = []
+  if (ids.length > 0) {
+    const { data: messageRows, error: messageError } = await supabase
+      .from('mensajes_chat')
+      .select('id, conversacion_id, remitente_id, cuerpo, leido, creado_en')
+      .in('conversacion_id', ids)
+      .order('creado_en', { ascending: false })
+
+    throwIfError(messageError, 'No se pudieron cargar los mensajes.')
+    messages = messageRows || []
+  }
+
+  return rows.map((row) => {
+    const related = messages.filter((item) => item.conversacion_id === row.id)
+    const last = related[0]
+    return {
+      ...mapConversation(row, names),
+      ultimo_mensaje: last?.cuerpo || '',
+      no_leidos: related.filter(
+        (item) => !item.leido && item.remitente_id !== userId
+      ).length,
+    }
+  })
+}
+
+export async function getConversation(conversationId, userId) {
+  const { data, error } = await supabase
+    .from('conversaciones')
+    .select(
+      `
+      id,
+      donacion_id,
+      solicitud_id,
+      donante_usuario_id,
+      receptor_usuario_id,
+      creado_en,
+      solicitudes ( nombre_paciente, hospital, ciudad )
+    `
+    )
+    .eq('id', conversationId)
+    .single()
+
+  throwIfError(error, 'No se pudo abrir el chat.')
+
+  if (
+    data.donante_usuario_id !== userId &&
+    data.receptor_usuario_id !== userId
+  ) {
+    throw new Error('Este chat no está desbloqueado para tu cuenta.')
+  }
+
+  const names = await loadUserNames([
+    data.donante_usuario_id,
+    data.receptor_usuario_id,
+  ])
+  return mapConversation(data, names)
+}
+
+export async function listChatMessages(conversationId, userId) {
+  await getConversation(conversationId, userId)
+
+  const { data, error } = await supabase
+    .from('mensajes_chat')
+    .select('*')
+    .eq('conversacion_id', conversationId)
+    .order('creado_en', { ascending: true })
+
+  throwIfError(error, 'No se pudieron cargar los mensajes.')
+  return data || []
+}
+
+export async function sendChatMessage({ conversationId, userId, body }) {
+  const conversation = await getConversation(conversationId, userId)
+  const text = String(body || '').trim()
+  if (!text) {
+    throw new Error('Escribí un mensaje.')
+  }
+
+  const { data, error } = await supabase
+    .from('mensajes_chat')
+    .insert({
+      conversacion_id: conversation.id,
+      remitente_id: userId,
+      cuerpo: text,
+    })
+    .select()
+    .single()
+
+  throwIfError(error, 'No se pudo enviar el mensaje.')
+  return data
+}
+
+export async function markChatRead(conversationId, userId) {
+  const { error } = await supabase
+    .from('mensajes_chat')
+    .update({ leido: true })
+    .eq('conversacion_id', conversationId)
+    .neq('remitente_id', userId)
+    .eq('leido', false)
+
+  throwIfError(error, 'No se pudieron marcar los mensajes como leídos.')
+}
+
+export async function countUnreadChatMessages(userId) {
+  const chats = await listMyConversations(userId)
+  return chats.reduce((total, chat) => total + (chat.no_leidos || 0), 0)
+}
+
+export async function findConversationForAlert({ userId, conversationId, requestId }) {
+  if (conversationId) {
+    return getConversation(conversationId, userId)
+  }
+
+  if (!requestId) return null
+
+  const chats = await listMyConversations(userId)
+  return chats.find((chat) => chat.solicitud_id === requestId) || null
 }
 
 export async function markAlertRead(id) {
@@ -552,6 +878,23 @@ export async function offerDonation({ donorId, requestId, notes, date }) {
 
     throwIfError(error, 'No se pudo registrar la donación.')
     data = created
+  }
+
+  const conversation = await unlockConversation({
+    donationId: data.id,
+    donorId,
+    requestId,
+  })
+  data.conversationId = conversation?.id || null
+
+  if (!data.alreadyOffered) {
+    await notifyRecipientOfAcceptance({
+      donorId,
+      requestId,
+      notes,
+      date,
+      conversationId: data.conversationId,
+    })
   }
 
   await supabase

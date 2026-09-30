@@ -40,7 +40,7 @@ function CompleteProfile({ onNavigate }) {
     }
 
     if (coords.lat == null || coords.lng == null) {
-      setError('Buscá y seleccioná tu localidad, o usá el GPS.')
+      setError('Buscá y seleccioná tu localidad.')
       return
     }
 
@@ -54,7 +54,7 @@ function CompleteProfile({ onNavigate }) {
         city: coords.label || user.ciudad,
         latitud: coords.lat,
         longitud: coords.lng,
-        radioKm,
+        radioKm: radiusKm,
       })
       setUser(updated)
       onNavigate(user.donante_id ? 'donar' : 'solicitar')
@@ -83,7 +83,8 @@ function CompleteProfile({ onNavigate }) {
               type="tel"
               value={phone}
               onChange={(event) => setPhone(event.target.value)}
-              placeholder="Opcional"
+              placeholder="Tu número de contacto"
+              required
             />
           </label>
 

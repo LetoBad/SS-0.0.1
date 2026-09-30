@@ -106,17 +106,6 @@ function Register({ onNavigate }) {
           </label>
 
           <label>
-            Teléfono
-            <input
-              type="tel"
-              name="phone"
-              value={form.phone}
-              onChange={handleChange}
-              placeholder="Opcional"
-            />
-          </label>
-
-          <label>
             Fecha de nacimiento
             <input
               type="date"

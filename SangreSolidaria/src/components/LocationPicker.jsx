@@ -1,65 +1,49 @@
-import { useState } from 'react'
-import { COUNTRIES, requestBrowserLocation } from '../lib/geo.js'
+import { useEffect, useRef, useState } from 'react'
+import { COUNTRIES } from '../lib/geo.js'
 import { searchPlaces } from '../lib/maps.js'
 
-function LocationPicker({ value, onChange }) {
+function LocationPicker({ value, onChange, showCurrentLocation = false }) {
   const [country, setCountry] = useState(value?.country || '')
-  const [query, setQuery] = useState('')
+  const [query, setQuery] = useState(value?.label || '')
   const [results, setResults] = useState([])
   const [status, setStatus] = useState('')
   const [loading, setLoading] = useState(false)
+  const skipNextSearch = useRef(false)
 
-  async function handleLocate() {
-    setStatus('')
-    setResults([])
-    setLoading(true)
-
-    try {
-      const coords = await requestBrowserLocation()
-      onChange({
-        ...coords,
-        label: 'Ubicación actual del dispositivo',
-        country,
-      })
-      setStatus('Ubicación del GPS obtenida.')
-    } catch (error) {
-      setStatus(error.message)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  async function handleSearch(event) {
-    event.preventDefault()
-    setStatus('')
-    setResults([])
-
-    if (!country) {
-      setStatus('Elegí un país antes de buscar, para no confundir ciudades con el mismo nombre.')
+  useEffect(() => {
+    if (skipNextSearch.current) {
+      skipNextSearch.current = false
       return
     }
 
-    if (!query.trim()) {
-      setStatus('Escribí una ciudad, barrio u hospital.')
+    const term = query.trim()
+    if (!country || term.length < 3) {
+      setResults([])
       return
     }
 
-    setLoading(true)
-
-    try {
-      const places = await searchPlaces(query.trim(), country)
-      setResults(places)
-      if (!places.length) {
-        setStatus('No encontramos ese lugar en el país elegido.')
+    const timer = window.setTimeout(async () => {
+      setLoading(true)
+      setStatus('')
+      try {
+        const places = await searchPlaces(term, country)
+        setResults(places)
+        if (!places.length) {
+          setStatus('No encontramos ese lugar en el país elegido.')
+        }
+      } catch (error) {
+        setResults([])
+        setStatus(error.message)
+      } finally {
+        setLoading(false)
       }
-    } catch (error) {
-      setStatus(error.message)
-    } finally {
-      setLoading(false)
-    }
-  }
+    }, 350)
+
+    return () => window.clearTimeout(timer)
+  }, [query, country])
 
   function handleSelect(place) {
+    skipNextSearch.current = true
     onChange({
       lat: place.lat,
       lng: place.lng,
@@ -68,15 +52,14 @@ function LocationPicker({ value, onChange }) {
     })
     setResults([])
     setQuery(place.label)
-    setStatus('Lugar seleccionado. Guardalo para usarlo en las alertas.')
+    setStatus('Lugar seleccionado.')
   }
 
   return (
     <div className="location-box">
       <p>
-        Elegí el país y buscá el lugar. Así Rivera en Uruguay no se
-        confunde con Rivera en Argentina. También podés usar el GPS
-        si das permiso.
+        Elegí el país y escribí tu localidad. Van a aparecer
+        sugerencias para que elijas el lugar correcto.
       </p>
 
       <label>
@@ -98,7 +81,7 @@ function LocationPicker({ value, onChange }) {
       </label>
 
       <label>
-        Buscar lugar
+        Localidad
         <input
           type="search"
           value={query}
@@ -106,31 +89,14 @@ function LocationPicker({ value, onChange }) {
           onKeyDown={(event) => {
             if (event.key === 'Enter') {
               event.preventDefault()
-              handleSearch(event)
             }
           }}
           placeholder="Ej: Rivera"
+          autoComplete="off"
         />
       </label>
 
-      <div className="hero-buttons">
-        <button
-          className="btn-primary"
-          type="button"
-          onClick={handleSearch}
-          disabled={loading}
-        >
-          {loading ? 'Buscando...' : 'Buscar'}
-        </button>
-        <button
-          className="btn-secondary"
-          type="button"
-          onClick={handleLocate}
-          disabled={loading}
-        >
-          Usar mi ubicación actual
-        </button>
-      </div>
+      {loading ? <p className="muted">Buscando sugerencias...</p> : null}
 
       {results.length > 0 ? (
         <ul className="place-results">
@@ -142,6 +108,12 @@ function LocationPicker({ value, onChange }) {
             </li>
           ))}
         </ul>
+      ) : null}
+
+      {showCurrentLocation ? (
+        <button className="btn-secondary" type="button" disabled>
+          Usar mi ubicación actual
+        </button>
       ) : null}
 
       {value?.lat != null && value?.lng != null ? (

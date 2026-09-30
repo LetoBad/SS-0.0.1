@@ -4,12 +4,13 @@ import DonorsMap from '../components/DonorsMap.jsx'
 import {
   listActiveRequests,
   listAvailableDonors,
+  listMyConversations,
   offerDonation,
 } from '../lib/db.js'
 import { canDonateTo } from '../lib/catalog.js'
 import { distanceKm, formatKm, isWithinRadius } from '../lib/geo.js'
 
-function Donate({ onNavigate }) {
+function Donate({ onNavigate, onOpenChat }) {
   const { user } = useAuth()
   const [requests, setRequests] = useState([])
   const [donors, setDonors] = useState([])
@@ -19,6 +20,8 @@ function Donate({ onNavigate }) {
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [openedChatId, setOpenedChatId] = useState(null)
+  const [chatsByRequest, setChatsByRequest] = useState({})
 
   useEffect(() => {
     listActiveRequests()
@@ -28,7 +31,19 @@ function Donate({ onNavigate }) {
     listAvailableDonors()
       .then(setDonors)
       .catch(() => setDonors([]))
-  }, [])
+
+    if (user?.id) {
+      listMyConversations(user.id)
+        .then((chats) => {
+          const map = {}
+          chats.forEach((chat) => {
+            map[chat.solicitud_id] = chat.id
+          })
+          setChatsByRequest(map)
+        })
+        .catch(() => setChatsByRequest({}))
+    }
+  }, [user?.id])
 
   async function handleOffer(request) {
     if (!user?.donante_id) {
@@ -50,10 +65,17 @@ function Donate({ onNavigate }) {
       if (request.latitud != null && request.longitud != null) {
         setFocusCoords({ lat: request.latitud, lng: request.longitud })
       }
+      setOpenedChatId(donation.conversationId || null)
+      if (donation.conversationId) {
+        setChatsByRequest((current) => ({
+          ...current,
+          [request.id]: donation.conversationId,
+        }))
+      }
       setMessage(
         donation.alreadyOffered
-          ? 'Ya habías ofrecido donar para esta solicitud. Actualizamos tus datos.'
-          : 'Donación registrada. El solicitante podrá verla.'
+          ? 'Ya habías ofrecido donar para esta solicitud. El chat sigue disponible.'
+          : 'Donación registrada. Se desbloqueó el chat con el receptor.'
       )
     } catch (err) {
       setError(err.message)
@@ -202,6 +224,15 @@ function Donate({ onNavigate }) {
                     >
                       Ofrecer donación
                     </button>
+                    {chatsByRequest[request.id] ? (
+                      <button
+                        className="btn-secondary"
+                        type="button"
+                        onClick={() => onOpenChat(chatsByRequest[request.id])}
+                      >
+                        Abrir chat
+                      </button>
+                    ) : null}
                   </div>
                 </article>
               )
@@ -210,7 +241,23 @@ function Donate({ onNavigate }) {
         </div>
 
         {error ? <p className="form-error">{error}</p> : null}
-        {message ? <p className="form-ok">{message}</p> : null}
+        {message ? (
+          <p className="form-ok">
+            {message}
+            {openedChatId ? (
+              <>
+                {' '}
+                <button
+                  className="btn-secondary"
+                  type="button"
+                  onClick={() => onOpenChat(openedChatId)}
+                >
+                  Abrir chat
+                </button>
+              </>
+            ) : null}
+          </p>
+        ) : null}
       </div>
     </main>
   )

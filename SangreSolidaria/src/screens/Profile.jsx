@@ -39,7 +39,7 @@ function Profile({ onNavigate }) {
     }
 
     if (coords.lat == null || coords.lng == null) {
-      setError('Buscá un lugar o usá el GPS antes de guardar.')
+      setError('Buscá y seleccioná un lugar antes de guardar.')
       return
     }
 
@@ -51,7 +51,7 @@ function Profile({ onNavigate }) {
         userId: user.id,
         latitud: coords.lat,
         longitud: coords.lng,
-        radioKm,
+        radioKm: radiusKm,
         ciudad: coords.label || user.ciudad,
       })
       const refreshed = await refreshSessionUser(user.id)
