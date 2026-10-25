@@ -212,8 +212,10 @@ CREATE POLICY donantes_insert ON donantes FOR INSERT WITH CHECK (true);
 CREATE POLICY donantes_update ON donantes FOR UPDATE USING (true);
 CREATE POLICY solicitudes_select ON solicitudes FOR SELECT USING (true);
 CREATE POLICY solicitudes_insert ON solicitudes FOR INSERT WITH CHECK (true);
+CREATE POLICY solicitudes_update ON solicitudes FOR UPDATE USING (true);
 CREATE POLICY donaciones_select ON donaciones FOR SELECT USING (true);
 CREATE POLICY donaciones_insert ON donaciones FOR INSERT WITH CHECK (true);
+CREATE POLICY donaciones_update ON donaciones FOR UPDATE USING (true);
 CREATE POLICY notificaciones_select ON notificaciones FOR SELECT USING (true);
 CREATE POLICY notificaciones_insert ON notificaciones FOR INSERT WITH CHECK (true);
 

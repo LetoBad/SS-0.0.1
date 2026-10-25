@@ -44,11 +44,17 @@ CREATE POLICY solicitudes_select ON solicitudes FOR SELECT USING (true);
 DROP POLICY IF EXISTS solicitudes_insert ON solicitudes;
 CREATE POLICY solicitudes_insert ON solicitudes FOR INSERT WITH CHECK (true);
 
+DROP POLICY IF EXISTS solicitudes_update ON solicitudes;
+CREATE POLICY solicitudes_update ON solicitudes FOR UPDATE USING (true);
+
 DROP POLICY IF EXISTS donaciones_select ON donaciones;
 CREATE POLICY donaciones_select ON donaciones FOR SELECT USING (true);
 
 DROP POLICY IF EXISTS donaciones_insert ON donaciones;
 CREATE POLICY donaciones_insert ON donaciones FOR INSERT WITH CHECK (true);
+
+DROP POLICY IF EXISTS donaciones_update ON donaciones;
+CREATE POLICY donaciones_update ON donaciones FOR UPDATE USING (true);
 
 GRANT SELECT ON vista_solicitudes TO anon, authenticated;
 GRANT SELECT ON roles, grupos_sanguineos, estados_solicitud TO anon, authenticated;

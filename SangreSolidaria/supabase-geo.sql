@@ -56,11 +56,20 @@ DROP POLICY IF EXISTS notificaciones_update ON notificaciones;
 CREATE POLICY notificaciones_update ON notificaciones
     FOR UPDATE USING (true);
 
+DROP POLICY IF EXISTS solicitudes_update ON solicitudes;
+CREATE POLICY solicitudes_update ON solicitudes
+    FOR UPDATE USING (true);
+
+DROP POLICY IF EXISTS donaciones_update ON donaciones;
+CREATE POLICY donaciones_update ON donaciones
+    FOR UPDATE USING (true);
+
 GRANT SELECT ON vista_solicitudes TO anon, authenticated;
-GRANT SELECT, INSERT, UPDATE ON donantes, solicitudes, notificaciones TO anon, authenticated;
+GRANT SELECT, INSERT, UPDATE ON donantes, solicitudes, donaciones, notificaciones TO anon, authenticated;
 
 ALTER TABLE usuarios
     ADD COLUMN IF NOT EXISTS latitud DOUBLE PRECISION,
-    ADD COLUMN IF NOT EXISTS longitud DOUBLE PRECISION;
+    ADD COLUMN IF NOT EXISTS longitud DOUBLE PRECISION,
+    ADD COLUMN IF NOT EXISTS pais VARCHAR(5);
 
 NOTIFY pgrst, 'reload schema';

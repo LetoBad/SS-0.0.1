@@ -1,5 +1,6 @@
 import { supabase } from '../supabase.js'
 import { canDonateTo } from './catalog.js'
+import { meetsMinimumAge, MIN_ACCOUNT_AGE } from './dates.js'
 import { distanceKm, isWithinRadius } from './geo.js'
 
 const SESSION_KEY = 'ss_session'
@@ -176,6 +177,7 @@ async function buildSessionUser(usuario) {
     email: usuario.email,
     telefono: usuario.telefono,
     ciudad: usuario.ciudad,
+    pais: usuario.pais || null,
     rol_id: usuario.rol_id,
     rol: role.nombre,
     donante_id: donor?.id ?? null,
@@ -194,7 +196,6 @@ export async function registerUser({
   phone,
   city,
   birthDate,
-  role,
   bloodType,
   latitud,
   longitud,
@@ -203,8 +204,17 @@ export async function registerUser({
     throw new Error('La contraseña debe tener al menos 8 caracteres.')
   }
 
-  const roleName = role === 'solicitante' ? 'SOLICITANTE' : 'DONANTE'
-  const rolId = await findRoleId(roleName)
+  if (!bloodType) {
+    throw new Error('Elegí tu grupo sanguíneo. La misma cuenta puede donar y pedir donantes.')
+  }
+
+  if (!birthDate || !meetsMinimumAge(birthDate)) {
+    throw new Error(
+      `Para crear una cuenta tenés que tener al menos ${MIN_ACCOUNT_AGE} años.`
+    )
+  }
+
+  const rolId = await findRoleId('DONANTE')
   const passwordHash = await makePasswordHash(password)
 
   const { data: usuario, error } = await supabase
@@ -223,19 +233,17 @@ export async function registerUser({
 
   throwIfError(error, 'No se pudo crear el usuario.')
 
-  if (roleName === 'DONANTE') {
-    const grupoId = await findBloodGroupId(bloodType)
-    const { error: donorError } = await supabase.from('donantes').insert({
-      usuario_id: usuario.id,
-      grupo_sanguineo_id: grupoId,
-      disponible: true,
-      latitud: latitud ?? null,
-      longitud: longitud ?? null,
-      radio_km: 5,
-    })
+  const grupoId = await findBloodGroupId(bloodType)
+  const { error: donorError } = await supabase.from('donantes').insert({
+    usuario_id: usuario.id,
+    grupo_sanguineo_id: grupoId,
+    disponible: true,
+    latitud: latitud ?? null,
+    longitud: longitud ?? null,
+    radio_km: 5,
+  })
 
-    throwIfError(donorError, 'El usuario se creó, pero no el perfil de donante.')
-  }
+  throwIfError(donorError, 'El usuario se creó, pero no el perfil de donante.')
 
   const sessionUser = await buildSessionUser(usuario)
   saveSession(sessionUser)
@@ -325,11 +333,252 @@ export async function listActiveRequests() {
   const { data, error } = await supabase
     .from('vista_solicitudes')
     .select('*')
-    .eq('estado', 'ACTIVA')
+    .in('estado', ['ACTIVA', 'EN_PROCESO'])
     .order('creado_en', { ascending: false })
 
   throwIfError(error, 'No se pudieron cargar las solicitudes.')
+
+  const rows = data || []
+  if (!rows.length) return rows
+
+  const { data: owners, error: ownerError } = await supabase
+    .from('solicitudes')
+    .select('id, usuario_id')
+    .in(
+      'id',
+      rows.map((row) => row.id)
+    )
+
+  throwIfError(ownerError, 'No se pudieron cargar las solicitudes.')
+
+  const ownerById = new Map(
+    (owners || []).map((row) => [String(row.id), row.usuario_id])
+  )
+
+  return rows.map((row) => ({
+    ...row,
+    usuario_id: ownerById.get(String(row.id)) ?? null,
+  }))
+}
+
+function requestStateName(row) {
+  return row?.estados_solicitud?.nombre || ''
+}
+
+function isOpenRequestState(stateName) {
+  return stateName === 'ACTIVA' || stateName === 'EN_PROCESO'
+}
+
+async function loadOwnedRequest(requestId, usuarioId) {
+  const { data, error } = await supabase
+    .from('solicitudes')
+    .select('id, usuario_id, nombre_paciente, hospital, estados_solicitud ( nombre )')
+    .eq('id', requestId)
+    .single()
+
+  throwIfError(error, 'No se pudo leer el pedido.')
+  if (String(data.usuario_id) !== String(usuarioId)) {
+    throw new Error('Solo quien publicó el pedido puede modificarlo.')
+  }
   return data
+}
+
+async function setRequestState(requestId, usuarioId, stateName) {
+  const estadoId = await findStateId(stateName)
+  const { data, error } = await supabase
+    .from('solicitudes')
+    .update({
+      estado_id: estadoId,
+      actualizado_en: new Date().toISOString(),
+    })
+    .eq('id', requestId)
+    .eq('usuario_id', usuarioId)
+    .select('id')
+    .maybeSingle()
+
+  throwIfError(error, 'No se pudo actualizar el pedido.')
+  if (!data) {
+    throw new Error(
+      'No se pudo actualizar el pedido. Ejecutá supabase-policies.sql en el SQL Editor de Supabase para permitir la modificación.'
+    )
+  }
+}
+
+async function markRequestInProgress(requestId) {
+  const activaId = await findStateId('ACTIVA')
+  const procesoId = await findStateId('EN_PROCESO')
+  await supabase
+    .from('solicitudes')
+    .update({
+      estado_id: procesoId,
+      actualizado_en: new Date().toISOString(),
+    })
+    .eq('id', requestId)
+    .eq('estado_id', activaId)
+}
+
+async function notifyDonorUser(usuarioId, payload) {
+  if (!usuarioId) return
+  await supabase.from('notificaciones').insert({
+    usuario_id: usuarioId,
+    ...payload,
+  })
+}
+
+export async function listMyRequests(usuarioId) {
+  const { data, error } = await supabase
+    .from('solicitudes')
+    .select(
+      `
+      id,
+      nombre_paciente,
+      cantidad_donantes,
+      hospital,
+      ciudad,
+      fecha_necesidad,
+      creado_en,
+      estados_solicitud ( nombre ),
+      grupos_sanguineos ( nombre )
+    `
+    )
+    .eq('usuario_id', usuarioId)
+    .order('creado_en', { ascending: false })
+
+  throwIfError(error, 'No se pudieron cargar tus pedidos.')
+
+  const rows = data || []
+  if (!rows.length) return []
+
+  const { data: donations, error: donationError } = await supabase
+    .from('donaciones')
+    .select('id, estado, solicitud_id, donantes ( usuarios ( nombre ) )')
+    .in(
+      'solicitud_id',
+      rows.map((row) => row.id)
+    )
+
+  throwIfError(donationError, 'No se pudieron cargar las ofertas de tus pedidos.')
+
+  const offersByRequest = new Map()
+  for (const donation of donations || []) {
+    const key = String(donation.solicitud_id)
+    const current = offersByRequest.get(key) || []
+    current.push({
+      id: donation.id,
+      estado: donation.estado,
+      nombre: donation.donantes?.usuarios?.nombre || 'Donante',
+    })
+    offersByRequest.set(key, current)
+  }
+
+  return rows.map((row) => ({
+    id: row.id,
+    nombre_paciente: row.nombre_paciente,
+    grupo_sanguineo: row.grupos_sanguineos?.nombre || '',
+    estado: requestStateName(row),
+    cantidad_donantes: row.cantidad_donantes,
+    hospital: row.hospital,
+    ciudad: row.ciudad,
+    fecha_necesidad: row.fecha_necesidad,
+    ofertas: offersByRequest.get(String(row.id)) || [],
+  }))
+}
+
+export async function markDonationFulfilled({ donationId, requestId, usuarioId }) {
+  const request = await loadOwnedRequest(requestId, usuarioId)
+  if (!isOpenRequestState(requestStateName(request))) {
+    throw new Error('Este pedido ya está cerrado.')
+  }
+
+  const { data: donation, error } = await supabase
+    .from('donaciones')
+    .select('id, estado, donantes ( usuarios ( id ) )')
+    .eq('id', donationId)
+    .eq('solicitud_id', requestId)
+    .single()
+
+  throwIfError(error, 'No se pudo leer la oferta.')
+  if (donation.estado !== 'registrada' && donation.estado !== 'confirmada') {
+    throw new Error('Esta oferta ya no se puede marcar como realizada.')
+  }
+
+  const { data: updated, error: updateError } = await supabase
+    .from('donaciones')
+    .update({
+      estado: 'realizada',
+      actualizado_en: new Date().toISOString(),
+    })
+    .eq('id', donationId)
+    .select('id')
+    .maybeSingle()
+
+  throwIfError(updateError, 'No se pudo marcar la donación.')
+  if (!updated) {
+    throw new Error(
+      'No se pudo marcar la donación. Ejecutá supabase-policies.sql en el SQL Editor de Supabase.'
+    )
+  }
+
+  await notifyDonorUser(donation.donantes?.usuarios?.id, {
+    titulo: 'Tu donación se marcó como realizada',
+    mensaje: `Quien pidió ayuda para ${request.nombre_paciente} marcó que tu donación se realizó.`,
+    tipo: 'donacion_realizada',
+    solicitud_id: requestId,
+  })
+}
+
+export async function closeBloodRequest({ requestId, usuarioId, outcome }) {
+  const request = await loadOwnedRequest(requestId, usuarioId)
+  if (!isOpenRequestState(requestStateName(request))) {
+    throw new Error('Este pedido ya está cerrado.')
+  }
+
+  const completed = outcome === 'ayuda'
+  const nextState = completed ? 'COMPLETADA' : 'CANCELADA'
+  const donationState = completed ? 'realizada' : 'cancelada'
+  await setRequestState(requestId, usuarioId, nextState)
+
+  const { data: donations, error } = await supabase
+    .from('donaciones')
+    .select('id, donantes ( usuarios ( id ) )')
+    .eq('solicitud_id', requestId)
+    .in('estado', ['registrada', 'confirmada'])
+
+  throwIfError(error, 'El pedido se cerró, pero no se pudieron leer las ofertas.')
+
+  const openDonations = donations || []
+  if (openDonations.length) {
+    const { error: donationError } = await supabase
+      .from('donaciones')
+      .update({
+        estado: donationState,
+        actualizado_en: new Date().toISOString(),
+      })
+      .in(
+        'id',
+        openDonations.map((donation) => donation.id)
+      )
+
+    throwIfError(donationError, 'El pedido se cerró, pero no se pudieron actualizar las ofertas.')
+
+    const titulo = completed ? 'El pedido ya tuvo ayuda' : 'El pedido fue cancelado'
+    const mensaje = completed
+      ? `El pedido de ${request.nombre_paciente} en ${request.hospital} se cerró porque ya hubo ayuda. Tu oferta quedó como realizada.`
+      : `El pedido de ${request.nombre_paciente} en ${request.hospital} fue cancelado. Tu oferta quedó cancelada.`
+
+    await Promise.all(
+      openDonations.map((donation) =>
+        notifyDonorUser(donation.donantes?.usuarios?.id, {
+          titulo,
+          mensaje,
+          tipo: 'pedido_cerrado',
+          solicitud_id: requestId,
+        })
+      )
+    )
+  }
+
+  return { estado: nextState }
 }
 
 export async function listAvailableDonors() {
@@ -370,6 +619,7 @@ async function notifyEligibleDonors({ request, bloodType, hospital, city }) {
 
   for (const donor of donors) {
     if (!donor.activo || !donor.usuario_id) continue
+    if (String(donor.usuario_id) === String(request.usuario_id)) continue
     if (!canDonateTo(donor.grupo, bloodType)) continue
     if (donor.latitud == null || donor.longitud == null) continue
 
@@ -400,6 +650,7 @@ export async function saveDonorLocation({
   longitud,
   radioKm,
   ciudad,
+  pais,
 }) {
   const { error } = await supabase
     .from('donantes')
@@ -413,14 +664,178 @@ export async function saveDonorLocation({
 
   throwIfError(error, 'No se pudo guardar tu ubicación.')
 
-  if (userId && ciudad) {
-    await supabase
+  if (userId && (ciudad || pais)) {
+    const payload = {
+      actualizado_en: new Date().toISOString(),
+    }
+    if (ciudad) payload.ciudad = ciudad
+    if (pais) payload.pais = pais
+
+    let { error: userError } = await supabase
       .from('usuarios')
-      .update({
-        ciudad,
-        actualizado_en: new Date().toISOString(),
-      })
+      .update(payload)
       .eq('id', userId)
+
+    if (
+      userError &&
+      pais &&
+      (userError.message.includes('schema cache') || userError.message.includes('pais'))
+    ) {
+      delete payload.pais
+      const retry = await supabase.from('usuarios').update(payload).eq('id', userId)
+      userError = retry.error
+    }
+
+    throwIfError(userError, 'No se pudo guardar tu localidad.')
+  }
+}
+
+async function updateUsuarioRow(userId, payload) {
+  let { error } = await supabase.from('usuarios').update(payload).eq('id', userId)
+
+  if (
+    error &&
+    (error.message.includes('schema cache') ||
+      error.message.includes('pais') ||
+      error.message.includes('latitud'))
+  ) {
+    const retryPayload = { ...payload }
+    delete retryPayload.pais
+    delete retryPayload.latitud
+    delete retryPayload.longitud
+    const retry = await supabase.from('usuarios').update(retryPayload).eq('id', userId)
+    error = retry.error
+  }
+
+  throwIfError(error, 'No se pudo actualizar tu cuenta.')
+}
+
+async function upsertDonorProfile({
+  userId,
+  donorId,
+  bloodType,
+  latitud,
+  longitud,
+  radioKm,
+}) {
+  const grupoId = await findBloodGroupId(bloodType)
+  const now = new Date().toISOString()
+  const payload = {
+    grupo_sanguineo_id: grupoId,
+    actualizado_en: now,
+  }
+
+  if (latitud != null && longitud != null) {
+    payload.latitud = latitud
+    payload.longitud = longitud
+  }
+
+  if (radioKm) {
+    payload.radio_km = Number(radioKm)
+  }
+
+  if (donorId) {
+    const { error } = await supabase.from('donantes').update(payload).eq('id', donorId)
+    throwIfError(error, 'No se pudo actualizar tu grupo sanguíneo.')
+    return donorId
+  }
+
+  const { data, error } = await supabase
+    .from('donantes')
+    .insert({
+      usuario_id: userId,
+      disponible: true,
+      radio_km: Number(radioKm || 5),
+      ...payload,
+    })
+    .select('id')
+    .single()
+
+  throwIfError(error, 'No se pudo habilitar la donación en tu cuenta.')
+  return data.id
+}
+
+export async function updateAccountProfile({
+  userId,
+  donorId,
+  name,
+  phone,
+  bloodType,
+  currentPassword,
+  newPassword,
+  latitud,
+  longitud,
+  radioKm,
+  ciudad,
+  pais,
+}) {
+  const trimmedName = (name || '').trim()
+  if (!trimmedName) {
+    throw new Error('El nombre es obligatorio.')
+  }
+
+  const { data: usuario, error: readError } = await supabase
+    .from('usuarios')
+    .select('id, password_hash')
+    .eq('id', userId)
+    .single()
+
+  throwIfError(readError, 'No se pudo leer tu cuenta.')
+
+  const userUpdate = {
+    nombre: trimmedName,
+    telefono: phone?.trim() || null,
+    actualizado_en: new Date().toISOString(),
+  }
+
+  if (ciudad) userUpdate.ciudad = ciudad
+  if (pais) userUpdate.pais = pais
+  if (latitud != null && longitud != null) {
+    userUpdate.latitud = latitud
+    userUpdate.longitud = longitud
+  }
+
+  if (newPassword) {
+    if (!currentPassword) {
+      throw new Error('Ingresá tu contraseña actual para cambiarla.')
+    }
+    if (newPassword.length < 8) {
+      throw new Error('La nueva contraseña debe tener al menos 8 caracteres.')
+    }
+    const valid = await passwordMatches(currentPassword, usuario.password_hash)
+    if (!valid) {
+      throw new Error('La contraseña actual es incorrecta.')
+    }
+    userUpdate.password_hash = await makePasswordHash(newPassword)
+  }
+
+  await updateUsuarioRow(userId, userUpdate)
+
+  if (bloodType) {
+    await upsertDonorProfile({
+      userId,
+      donorId,
+      bloodType,
+      latitud,
+      longitud,
+      radioKm,
+    })
+  } else if (donorId && latitud != null && longitud != null) {
+    await saveDonorLocation({
+      donorId,
+      userId,
+      latitud,
+      longitud,
+      radioKm,
+      ciudad,
+      pais,
+    })
+  }
+
+  const refreshed = await refreshSessionUser(userId)
+  return {
+    ...refreshed,
+    pais: pais || refreshed.pais,
   }
 }
 
@@ -429,6 +844,7 @@ export async function completeUserProfile({
   donorId,
   phone,
   city,
+  country,
   latitud,
   longitud,
   radioKm,
@@ -442,13 +858,19 @@ export async function completeUserProfile({
     .update({
       telefono: phone || null,
       ciudad: city || null,
+      pais: country || null,
       latitud,
       longitud,
       actualizado_en: new Date().toISOString(),
     })
     .eq('id', userId)
 
-  if (error && (error.message.includes('schema cache') || error.message.includes('latitud'))) {
+  if (
+    error &&
+    (error.message.includes('schema cache') ||
+      error.message.includes('latitud') ||
+      error.message.includes('pais'))
+  ) {
     const retry = await supabase
       .from('usuarios')
       .update({
@@ -470,6 +892,7 @@ export async function completeUserProfile({
       longitud,
       radioKm: radioKm || 5,
       ciudad: city,
+      pais: country,
     })
   }
 
@@ -478,12 +901,31 @@ export async function completeUserProfile({
     ...sessionUser,
     telefono: phone || sessionUser.telefono,
     ciudad: city || sessionUser.ciudad,
+    pais: country || sessionUser.pais,
     latitud: latitud ?? sessionUser.latitud,
     longitud: longitud ?? sessionUser.longitud,
     radio_km: radioKm ? Number(radioKm) : sessionUser.radio_km,
   }
   saveSession(withCoords)
   return withCoords
+}
+
+function isOwnProximityAlert(alert, ownRequestIds) {
+  return (
+    alert?.tipo === 'alerta_proximidad' &&
+    alert.solicitud_id != null &&
+    ownRequestIds.has(String(alert.solicitud_id))
+  )
+}
+
+async function loadOwnRequestIds(usuarioId) {
+  const { data, error } = await supabase
+    .from('solicitudes')
+    .select('id')
+    .eq('usuario_id', usuarioId)
+
+  throwIfError(error, 'No se pudieron cargar tus solicitudes.')
+  return new Set((data || []).map((row) => String(row.id)))
 }
 
 export async function listDonorAlerts(usuarioId) {
@@ -494,18 +936,20 @@ export async function listDonorAlerts(usuarioId) {
     .order('creado_en', { ascending: false })
 
   throwIfError(error, 'No se pudieron cargar las alertas.')
-  return data || []
+  const ownRequestIds = await loadOwnRequestIds(usuarioId)
+  return (data || []).filter((alert) => !isOwnProximityAlert(alert, ownRequestIds))
 }
 
 export async function countUnreadAlerts(usuarioId) {
-  const { count, error } = await supabase
+  const { data, error } = await supabase
     .from('notificaciones')
-    .select('*', { count: 'exact', head: true })
+    .select('id, tipo, solicitud_id')
     .eq('usuario_id', usuarioId)
     .eq('leida', false)
 
   throwIfError(error, 'No se pudieron contar las alertas.')
-  return count || 0
+  const ownRequestIds = await loadOwnRequestIds(usuarioId)
+  return (data || []).filter((alert) => !isOwnProximityAlert(alert, ownRequestIds)).length
 }
 
 async function loadUserNames(ids) {
@@ -836,14 +1280,36 @@ export async function refreshSessionUser(userId) {
 }
 
 export async function offerDonation({ donorId, requestId, notes, date }) {
+  const { data: requestRow, error: requestLookupError } = await supabase
+    .from('solicitudes')
+    .select('id, usuario_id, estados_solicitud ( nombre )')
+    .eq('id', requestId)
+    .single()
+
+  throwIfError(requestLookupError, 'No se pudo leer el pedido.')
+  if (!isOpenRequestState(requestStateName(requestRow))) {
+    throw new Error('Este pedido ya está cerrado.')
+  }
+
+  const { data: donorRow, error: donorLookupError } = await supabase
+    .from('donantes')
+    .select('usuario_id')
+    .eq('id', donorId)
+    .single()
+
+  throwIfError(donorLookupError, 'No se pudo leer el donante.')
+  if (String(donorRow.usuario_id) === String(requestRow.usuario_id)) {
+    throw new Error('No podés ofrecerte a tu propio pedido.')
+  }
+
   const payload = {
     donante_id: donorId,
     solicitud_id: requestId,
     estado: 'registrada',
-    fecha_donacion: date || null,
-    observaciones: notes || null,
     actualizado_en: new Date().toISOString(),
   }
+  if (date) payload.fecha_donacion = date
+  if (notes) payload.observaciones = notes
 
   const { data: existing, error: lookupError } = await supabase
     .from('donaciones')
@@ -856,13 +1322,13 @@ export async function offerDonation({ donorId, requestId, notes, date }) {
 
   let data
   if (existing) {
+    const changes = { actualizado_en: payload.actualizado_en }
+    if (date) changes.fecha_donacion = date
+    if (notes) changes.observaciones = notes
+
     const { data: updated, error } = await supabase
       .from('donaciones')
-      .update({
-        fecha_donacion: payload.fecha_donacion,
-        observaciones: payload.observaciones,
-        actualizado_en: payload.actualizado_en,
-      })
+      .update(changes)
       .eq('id', existing.id)
       .select()
       .single()
@@ -878,6 +1344,7 @@ export async function offerDonation({ donorId, requestId, notes, date }) {
 
     throwIfError(error, 'No se pudo registrar la donación.')
     data = created
+    await markRequestInProgress(requestId)
   }
 
   const conversation = await unlockConversation({
@@ -897,13 +1364,15 @@ export async function offerDonation({ donorId, requestId, notes, date }) {
     })
   }
 
-  await supabase
-    .from('donantes')
-    .update({
-      ultima_donacion: date || null,
-      actualizado_en: new Date().toISOString(),
-    })
-    .eq('id', donorId)
+  if (date) {
+    await supabase
+      .from('donantes')
+      .update({
+        ultima_donacion: date,
+        actualizado_en: new Date().toISOString(),
+      })
+      .eq('id', donorId)
+  }
 
   return data
 }

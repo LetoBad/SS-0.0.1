@@ -6,7 +6,7 @@ import {
   loadGoogleMaps,
 } from '../lib/maps.js'
 
-function DonorsMap({ donors, requests, focusCoords }) {
+function DonorsMap({ donors = [], requests = [], focusCoords }) {
   const mapRef = useRef(null)
   const mapInstance = useRef(null)
   const markersRef = useRef([])
@@ -158,7 +158,7 @@ function DonorsMap({ donors, requests, focusCoords }) {
     return (
       <div className="map-fallback">
         <p>
-          Para ver el mapa de donantes, agregá tu clave de Google Maps en
+          Para ver el mapa de solicitudes, agregá tu clave de Google Maps en
           el archivo <code>.env</code> como{' '}
           <code>VITE_GOOGLE_MAPS_API_KEY</code> y habilitá Maps JavaScript
           API y Geocoding API.

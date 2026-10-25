@@ -333,6 +333,12 @@ a {
   color: #252525;
 }
 
+.page-card h2 {
+  margin-top: 28px;
+  font-size: 22px;
+  color: #252525;
+}
+
 .page-card > p {
   margin-top: 12px;
   color: #666;
@@ -365,6 +371,17 @@ a {
   background: #fff;
 }
 
+.form input[type='radio'],
+.form input[type='checkbox'] {
+  width: 1.05rem;
+  height: 1.05rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  accent-color: #c23b4e;
+  flex: 0 0 auto;
+}
+
 .form select {
   appearance: auto;
   cursor: pointer;
@@ -389,11 +406,13 @@ a {
   font-weight: bold;
 }
 
-.radio {
+.form label.radio {
   display: flex;
+  flex-direction: row;
   align-items: center;
   gap: 8px;
   font-weight: normal;
+  line-height: 1.2;
 }
 
 .form-ok {

@@ -1,6 +1,12 @@
 import { useState } from 'react'
 import { useAuth } from '../context/AuthContext.jsx'
 import { BLOOD_TYPES } from '../lib/catalog.js'
+import {
+  formatDateInput,
+  meetsMinimumAge,
+  MIN_ACCOUNT_AGE,
+  parseBirthDate,
+} from '../lib/dates.js'
 
 function Register({ onNavigate }) {
   const { register } = useAuth()
@@ -13,7 +19,6 @@ function Register({ onNavigate }) {
     password: '',
     passwordConfirm: '',
     bloodType: '',
-    role: 'donante',
   })
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -32,10 +37,20 @@ function Register({ onNavigate }) {
       return
     }
 
+    const birthDate = parseBirthDate(form.birthDate)
+    if (!birthDate) {
+      setError('Ingresá la fecha de nacimiento como dd/mm/aaaa.')
+      return
+    }
+    if (!meetsMinimumAge(birthDate)) {
+      setError(`Para crear una cuenta tenés que tener al menos ${MIN_ACCOUNT_AGE} años.`)
+      return
+    }
+
     setLoading(true)
 
     try {
-      await register(form)
+      await register({ ...form, birthDate })
       onNavigate('completar')
     } catch (err) {
       setError(err.message)
@@ -50,8 +65,9 @@ function Register({ onNavigate }) {
         <span className="tag">Sumate a la red</span>
         <h1>Registrarse</h1>
         <p>
-          Primero creá tu cuenta. En el siguiente paso vas a
-          completar país y localidad.
+          Con la misma cuenta vas a poder donar y pedir
+          donantes. En el siguiente paso vas a completar país
+          y localidad.
         </p>
 
         <form className="form" onSubmit={handleSubmit}>
@@ -108,57 +124,45 @@ function Register({ onNavigate }) {
           <label>
             Fecha de nacimiento
             <input
-              type="date"
+              type="text"
               name="birthDate"
               value={form.birthDate}
-              onChange={handleChange}
+              onChange={(event) => {
+                const { name } = event.target
+                const value = formatDateInput(event.target.value)
+                setForm((current) => ({ ...current, [name]: value }))
+              }}
+              placeholder="dd/mm/aaaa"
+              inputMode="numeric"
+              autoComplete="bday"
+              maxLength={10}
+              pattern="\d{2}/\d{2}/\d{4}"
+              title="Usá el formato dd/mm/aaaa"
+              required
             />
           </label>
+          <p className="muted">
+            Tenés que tener al menos {MIN_ACCOUNT_AGE} años.
+          </p>
 
-          {form.role === 'donante' ? (
-            <label>
-              Grupo sanguíneo
-              <select
-                name="bloodType"
-                value={form.bloodType}
-                onChange={handleChange}
-                required
-              >
-                <option value="" disabled>
-                  Elegí tu grupo
+          <label>
+            Grupo sanguíneo
+            <select
+              name="bloodType"
+              value={form.bloodType}
+              onChange={handleChange}
+              required
+            >
+              <option value="" disabled>
+                Elegí tu grupo
+              </option>
+              {BLOOD_TYPES.map((type) => (
+                <option key={type} value={type}>
+                  {type}
                 </option>
-                {BLOOD_TYPES.map((type) => (
-                  <option key={type} value={type}>
-                    {type}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
-
-          <fieldset className="role-options">
-            <legend>Quiero</legend>
-            <label className="radio">
-              <input
-                type="radio"
-                name="role"
-                value="donante"
-                checked={form.role === 'donante'}
-                onChange={handleChange}
-              />
-              Ser donante
-            </label>
-            <label className="radio">
-              <input
-                type="radio"
-                name="role"
-                value="solicitante"
-                checked={form.role === 'solicitante'}
-                onChange={handleChange}
-              />
-              Pedir donantes
-            </label>
-          </fieldset>
+              ))}
+            </select>
+          </label>
 
           <button className="btn-primary" type="submit" disabled={loading}>
             {loading ? 'Creando cuenta...' : 'Crear cuenta'}

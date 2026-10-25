@@ -1,0 +1,372 @@
+================================================================================
+SANGRESOLIDARIA — EXPLICACIÓN DE LA APLICACIÓN
+================================================================================
+
+SangreSolidaria es una aplicación web para conectar personas que necesitan
+sangre (receptores) con donantes compatibles que estén cerca. El objetivo es
+que un pedido no quede solo como un formulario: el sistema avisa a donantes
+elegibles, muestra distancias en un mapa y, cuando alguien acepta donar,
+desbloquea un chat entre esas dos personas para coordinar.
+
+No es una red social ni un marketplace. El flujo es:
+
+  1. Registrarse (donante o quien pide ayuda).
+  2. Completar datos obligatorios: teléfono, país y localidad con coordenadas.
+  3. Publicar un pedido de sangre O ofrecer donar a un pedido activo.
+  4. Recibir alertas de proximidad (donantes) o de aceptación (receptores).
+  5. Chatear solo después de que el donante aceptó esa petición.
+
+
+--------------------------------------------------------------------------------
+1. QUÉ HACE CADA PANTALLA
+--------------------------------------------------------------------------------
+
+Inicio
+  Presentación y botones hacia donar o solicitar.
+
+Registro
+  Nombre, correo, contraseña, grupo sanguíneo y rol (donante u otro).
+  El teléfono y la ubicación NO van acá: se piden después.
+
+Completar datos (obligatorio si faltan latitud/longitud)
+  Teléfono, país, localidad (con sugerencias) y, si es donante, radio en km.
+  Hasta que esto esté listo, el resto de la app redirige a esta pantalla.
+
+Iniciar sesión
+  Correo + contraseña contra la tabla usuarios de Supabase.
+
+Perfil
+  El donante puede cambiar ubicación y radio de alertas.
+
+Necesito donantes
+  Publica una solicitud (paciente, grupo, hospital, ciudad, cantidad, fecha).
+  Usa la ubicación del perfil como base y alerta a donantes compatibles
+  que estén dentro de SU radio respecto al pedido.
+
+Hacer una donación
+  Lista solicitudes activas, mapa de donantes/pedidos y botón
+  "Ofrecer donación". Eso registra la donación, avisa al receptor y
+  desbloquea el chat.
+
+Alertas
+  Avisos de "solicitud cercana compatible" (para donantes) y
+  "un donante aceptó tu petición" (para el receptor), con acceso al chat.
+
+Chat
+  Lista de conversaciones desbloqueadas y la ventana de mensajes.
+
+
+--------------------------------------------------------------------------------
+2. ARQUITECTURA GENERAL (POR QUÉ ESTÁ ARMADA ASÍ)
+--------------------------------------------------------------------------------
+
+Es una SPA (Single Page Application): una sola página HTML que cambia de
+contenido en el navegador. No hay React Router. App.jsx guarda un estado
+"screen" (inicio, login, donar, alertas, chat, etc.) y muestra un
+componente u otro. Se eligió así para no agregar una librería de rutas
+mientras el producto es un conjunto chico de pantallas, y para no
+reescribir la estructura visual original.
+
+El backend no es un servidor propio (Node/Express, Django, etc.).
+La app habla directo con Supabase (PostgreSQL + API REST + políticas RLS).
+El cliente JavaScript inserta y consulta tablas. Eso acelera el desarrollo:
+tablas, SQL y el front alcanzan para un prototipo funcional.
+
+La sesión se guarda en localStorage (clave ss_session). No se usa
+Supabase Auth (UUID de auth.users). Hay una tabla propia "usuarios" con
+id numérico, porque el modelo de datos original (sql de bancos) ya definía
+usuarios, roles, donantes y solicitudes con esas claves.
+
+
+--------------------------------------------------------------------------------
+3. TECNOLOGÍAS Y POR QUÉ SE USARON
+--------------------------------------------------------------------------------
+
+React 19
+  Para armar la interfaz en componentes reutilizables (pantallas, mapa,
+  selector de lugar, chat). El estado de sesión vive en AuthContext y
+  llega a todas las pantallas sin pasar props por cada nivel a mano.
+  Se eligió React porque es el estándar actual para UIs interactivas y
+  el proyecto ya estaba iniciado con Vite + React.
+
+Vite
+  Servidor de desarrollo rápido y empaquetado de producción.
+  Por qué: recarga inmediata al editar, configuración mínima, y las
+  variables de entorno (VITE_...) se inyectan en el cliente de forma
+  simple. El comando es "npm run dev" (en este proyecto suele pedirse
+  como "run vita"). La URL local típica es http://localhost:5173/
+
+JavaScript (JSX), no TypeScript
+  El código existente era JS. Se mantuvo para no mezclar lenguajes ni
+  forzar una migración.
+
+CSS propio (App.css / index.css)
+  Sin Tailwind ni UI kit. Se pidió conservar el diseño visual (rojo,
+  tipografía, tarjetas). Cada pantalla reutiliza clases como page-card,
+  btn-primary, request-card.
+
+Supabase (PostgreSQL + supabase-js)
+  Base de datos en la nube, API REST automática sobre las tablas, y
+  Row Level Security. Por qué:
+  - El modelo ya estaba pensado en SQL (roles, grupos sanguíneos,
+    solicitudes, donaciones, notificaciones).
+  - No hace falta escribir un API CRUD a mano.
+  - Se puede ampliar el esquema con scripts SQL (geo, chat) sin
+    redesplegar un servidor.
+  El cliente se crea en src/supabase.js con:
+    VITE_SUPABASE_URL
+    VITE_SUPABASE_PUBLISHABLE_KEY
+  La URL no debe terminar en /rest/v1/; el código recorta ese sufijo
+  si alguien lo pega por error.
+
+PostgreSQL (en Supabase)
+  Relaciones reales: un usuario tiene un donante, una solicitud pertenece
+  a un usuario, una donación une donante + solicitud (única), una
+  conversación nace de esa donación. Las restricciones UNIQUE y CHECK
+  evitan duplicar ofertas y mensajes vacíos.
+
+Contraseñas: SHA-256 con salt (en el navegador)
+  registerUser / loginWithPassword en src/lib/db.js. Formato: salt$hash.
+  Por qué no bcrypt de servidor: no hay backend propio. Por qué no
+  Supabase Auth: el id de usuario debía coincidir con BIGINT del modelo
+  original. Limitación: el hash se calcula en el cliente; es suficiente
+  para un prototipo, no es el esquema más seguro de producción
+  (lo ideal a futuro sería Auth de Supabase o un backend que hashee).
+
+Google Maps JavaScript API + Geocoding API
+  Ver sección 4.
+
+Fórmula de Haversine (JavaScript propio, src/lib/geo.js)
+  Ver sección 4.
+
+localStorage
+  Persistir quién está logueado al recargar. Es simple y no requiere
+  cookies. El usuario puede borrar datos del sitio y cierra sesión.
+
+Polling (setInterval)
+  Alertas no leídas ~12 s, lista de chats ~8 s, mensajes del hilo ~2,5 s.
+  Por qué no WebSockets/Realtime como único canal: la app usa la clave
+  anónima y tablas propias, sin Auth de Supabase. El polling es
+  predecible y funciona con las mismas políticas INSERT/SELECT ya
+  usadas. Realtime exigiría publicar tablas y más configuración.
+
+HTML5 Geolocation API (navigator.geolocation)
+  Existe en geo.js (requestBrowserLocation) por si se pide GPS.
+  En el selector de lugar el botón de "ubicación actual" está oculto
+  por defecto (showCurrentLocation = false): se prioriza país +
+  localidad para no geocodificar mal ciudades homónimas (ej. Rivera).
+
+
+--------------------------------------------------------------------------------
+4. LOCALIZACIÓN (UBICACIÓN, RADIO Y ALERTAS)
+--------------------------------------------------------------------------------
+
+Problema que resuelve
+  Un pedido "en Rivera" no alcanza: hay Rivera en Uruguay y en Argentina.
+  Las alertas no pueden basarse solo en el nombre de la ciudad. Se
+  guardan coordenadas (latitud, longitud) en usuarios, donantes y
+  solicitudes.
+
+Cómo elige el usuario el lugar
+  Componente LocationPicker:
+  - Primero el país (código ISO: UY, AR, BR, etc.).
+  - Después escribe la localidad (mínimo 3 caracteres).
+  - A los 350 ms se consulta Geocoding con componentRestrictions.country
+    para que las sugerencias sean de ESE país.
+  - Al elegir una sugerencia se guardan lat, lng y la etiqueta (dirección
+    formateada). Esa etiqueta suele copiarse a "ciudad".
+
+Dónde se guarda
+  Script supabase-geo.sql agrega:
+  - donantes.latitud, longitud, radio_km (por defecto 5 km)
+  - solicitudes.latitud, longitud
+  - usuarios.latitud, longitud
+  Y recrea la vista vista_solicitudes incluyendo coords.
+
+Radio del donante
+  Cada donante define hasta cuántos km está dispuesto a desplazarse.
+  Al publicar un pedido, notifyEligibleDonors:
+  1. Lista donantes disponibles con coords.
+  2. Filtra compatibilidad ABO (canDonateTo en catalog.js).
+  3. Calcula distancia Haversine entre pedido y donante.
+  4. Si distancia <= radio_km del donante, inserta una fila en
+     notificaciones (tipo alerta_proximidad).
+
+Haversine (por qué no "línea recta" de Google Distance Matrix)
+  Haversine estima km en línea sobre la Tierra (esfera). Es gratis, corre
+  en el cliente o se podría mover a SQL, y alcanza para un radio de
+  alerta. No es tiempo de viaje ni tráfico. Distance Matrix de Google
+  cobraria por cada par origen-destino y no era necesario para el
+  prototipo.
+
+Compatibilidad de sangre
+  Tabla lógica en catalog.js (O- dona a todos, AB+ solo recibe AB+, etc.).
+  No se alerta a un donante incompatible aunque esté a 200 metros.
+
+Scripts SQL relacionados
+  supabase-schema.sql  → modelo base (roles, usuarios, donantes, etc.)
+  supabase-geo.sql     → columnas de ubicación, vista, políticas extra
+  Después de alterar tablas: NOTIFY pgrst, 'reload schema';
+  para que PostgREST vea las columnas nuevas (si no, error de schema cache).
+
+
+--------------------------------------------------------------------------------
+5. GOOGLE MAPS
+--------------------------------------------------------------------------------
+
+Para qué se usa
+  1. Geocodificar país + texto → coordenadas y sugerencias.
+  2. Mostrar un mapa en "Hacer una donación" (DonorsMap): marcadores de
+     donantes disponibles y de solicitudes, con opción de centrar en un
+     pedido.
+
+Cómo se carga
+  src/lib/maps.js inserta un <script> de
+  maps.googleapis.com/maps/api/js con la clave VITE_GOOGLE_MAPS_API_KEY.
+  La clave vive en .env, no en el código fuente. Si falta, el mapa
+  muestra un fallback y la búsqueda de lugares falla con un mensaje claro.
+
+Por qué Google Maps y no Leaflet / OpenStreetMap
+  Se pidió Maps explícitamente. Geocoding con restricción por país evita
+  el error de asignar una ciudad al país equivocado. El mapa embebido
+  es el que la gente reconoce (zoom, full screen).
+
+Requisitos en Google Cloud
+  - Facturación habilitada (Maps no funciona bien sin ella).
+  - Maps JavaScript API
+  - Geocoding API
+  - Restricción de referrer: http://localhost:5173/* en desarrollo
+  Si la clave es rechazada, gm_authFailure avisa en pantalla.
+
+Centro inicial del mapa
+  Se usa un punto de referencia en Argentina (Buenos Aires) solo como
+  vista por defecto hasta que hay marcadores o un foco. No implica que
+  todas las búsquedas sean de Argentina: el país lo elige el usuario.
+
+
+--------------------------------------------------------------------------------
+6. CHAT
+--------------------------------------------------------------------------------
+
+Regla de negocio
+  El chat NO está abierto entre cualquier usuario. Se crea una
+  conversación cuando un donante ofrece donar (acepta) para UNA
+  solicitud concreta. Quedan vinculados:
+    donacion_id (única) + donante_usuario_id + receptor_usuario_id
+
+Tablas (supabase-chat.sql)
+  conversaciones
+    Una por donación. No se puede chatear con uno mismo
+    (CHECK donante <> receptor).
+  mensajes_chat
+    conversacion_id, remitente_id, cuerpo, leido, creado_en.
+  notificaciones.conversacion_id
+    Para que la alerta "aceptaron tu petición" abra el chat correcto
+    si hay varios donantes en el mismo pedido.
+
+Flujo
+  Ofrecer donación
+    → inserta o actualiza donaciones (unique donante+solicitud)
+    → unlockConversation crea la fila de conversaciones si no existía
+    → si es la primera oferta, notifica al receptor
+    → el donante ve "Abrir chat"
+  Receptor
+    → alerta + botón Abrir chat, o menú Chat
+  Mensajes
+    → sendChatMessage solo si el usuario es participante
+    → markChatRead marca como leídos los que no son propios
+    → el menú Chat muestra un número si hay no leídos
+
+Por qué tablas propias y no WhatsApp / email
+  La coordinación queda dentro de la app, ligada al pedido médico
+  (paciente, hospital, ciudad) y no se mezcla con contactos personales
+  hasta que ambas partes quieran darse el teléfono (el aviso de
+  aceptación puede incluir el teléfono del donante si está en el perfil).
+
+Por qué polling y no chat en tiempo real puro
+  Misma razón que las alertas: simplicidad y RLS anónimo. Un intervalo
+  de 2,5 s en el hilo abierto es suficiente para coordinar un encuentro.
+  A futuro se puede suscribir postgres_changes de Supabase Realtime.
+
+Si el chat "no existe"
+  Hay que ejecutar supabase-chat.sql en el SQL Editor de Supabase.
+  Pedidos aceptados ANTES de ese script: el donante puede pulsar otra
+  vez "Ofrecer donación" en esa solicitud; el sistema no duplica la
+  donación (actualiza) y crea la conversación faltante.
+
+
+--------------------------------------------------------------------------------
+7. MODELO DE DATOS (RESUMEN)
+--------------------------------------------------------------------------------
+
+roles                 DONANTE / otros roles
+grupos_sanguineos     A+, O-, etc.
+estados_solicitud     ACTIVA, ...
+usuarios              persona, password_hash, ciudad, coords, teléfono
+donantes              1:1 con usuario si dona; grupo, radio_km, coords
+solicitudes           pedido de sangre + hospital + coords
+donaciones            oferta/aceptación (estado registrada, etc.)
+notificaciones        alertas de proximidad y de petición aceptada
+conversaciones        chat desbloqueado post-aceptación
+mensajes_chat         textos del chat
+vista_solicitudes     JOIN para listar pedidos con grupo y estado
+
+Políticas RLS
+  En el prototipo muchas políticas son USING (true) para anon e
+  authenticated, porque no hay JWT de Auth. Eso facilita el desarrollo
+  y NO es el modelo de seguridad final: en producción habría que
+  restringir por usuario autenticado.
+
+
+--------------------------------------------------------------------------------
+8. ARCHIVOS IMPORTANTES EN EL CÓDIGO
+--------------------------------------------------------------------------------
+
+src/App.jsx                 pantallas y menú (Alertas, Chat, badges)
+src/context/AuthContext.jsx login / registro / logout
+src/lib/db.js               toda la lógica contra Supabase
+src/lib/geo.js              Haversine, países, GPS
+src/lib/maps.js             carga de Maps y geocoder
+src/lib/catalog.js          grupos y compatibilidad
+src/components/LocationPicker.jsx
+src/components/DonorsMap.jsx
+src/screens/*               cada pantalla
+
+supabase-schema.sql         crear el modelo (cuidado: DROP de tablas)
+supabase-geo.sql            ubicación (no borra datos)
+supabase-chat.sql           chat (no borra datos)
+supabase-policies.sql       políticas extra si se usan por separado
+
+.env                        secretos y claves (no subir a git público)
+  VITE_SUPABASE_URL
+  VITE_SUPABASE_PUBLISHABLE_KEY
+  VITE_GOOGLE_MAPS_API_KEY
+
+
+--------------------------------------------------------------------------------
+9. CÓMO LEVANTAR EL PROYECTO
+--------------------------------------------------------------------------------
+
+1. En Supabase, ejecutar en orden según el estado de la base:
+   - Base nueva: supabase-schema.sql, luego geo, luego chat.
+   - Base ya creada: solo geo y/o chat si faltan.
+2. Configurar .env con URL, clave publishable y Maps.
+3. En la carpeta SangreSolidaria: npm install (si hace falta) y npm run dev.
+4. Abrir http://localhost:5173/
+
+
+--------------------------------------------------------------------------------
+10. LÍMITES ACTUALES (PARA ENTENDER EL ALCANCE)
+--------------------------------------------------------------------------------
+
+- Autenticación y RLS son de prototipo (clave anónima, hash en cliente).
+- El chat no cifra mensajes de extremo a extremo.
+- El mapa y el geocoder dependen de facturación y APIs de Google.
+- La distancia es geográfica, no de tránsito.
+- No hay notificaciones push del sistema operativo: las alertas están
+  en la tabla notificaciones y en el menú de la web.
+- Una sola conversación por par donante-solicitud (una donación).
+
+Este documento describe el sistema tal como está implementado en el
+código del proyecto SangreSolidaria (Vite + React + Supabase + Maps).
+================================================================================

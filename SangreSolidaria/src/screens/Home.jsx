@@ -69,8 +69,8 @@ function Home({ onNavigate }) {
             <div className="step-icon">01</div>
             <h3>Registrate</h3>
             <p>
-              Creá tu perfil y contanos si querés donar
-              sangre o necesitás ayuda.
+              Creá tu perfil. Con la misma cuenta podés donar
+              sangre y también pedir ayuda.
             </p>
           </button>
 

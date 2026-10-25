@@ -2,13 +2,26 @@ import { useEffect, useRef, useState } from 'react'
 import { COUNTRIES } from '../lib/geo.js'
 import { searchPlaces } from '../lib/maps.js'
 
-function LocationPicker({ value, onChange, showCurrentLocation = false }) {
+function LocationPicker({
+  value,
+  onChange,
+  showCurrentLocation = false,
+  presetCountry = false,
+  countryPending = false,
+}) {
   const [country, setCountry] = useState(value?.country || '')
   const [query, setQuery] = useState(value?.label || '')
   const [results, setResults] = useState([])
   const [status, setStatus] = useState('')
   const [loading, setLoading] = useState(false)
   const skipNextSearch = useRef(false)
+  const queryUntouched = useRef(true)
+
+  useEffect(() => {
+    if (value?.country && value.country !== country) {
+      setCountry(value.country)
+    }
+  }, [value?.country, country])
 
   useEffect(() => {
     if (skipNextSearch.current) {
@@ -17,6 +30,17 @@ function LocationPicker({ value, onChange, showCurrentLocation = false }) {
     }
 
     const term = query.trim()
+    const savedLabel = (value?.label || '').trim()
+    if (
+      queryUntouched.current &&
+      value?.lat != null &&
+      term &&
+      term === savedLabel
+    ) {
+      setResults([])
+      return
+    }
+
     if (!country || term.length < 3) {
       setResults([])
       return
@@ -40,7 +64,7 @@ function LocationPicker({ value, onChange, showCurrentLocation = false }) {
     }, 350)
 
     return () => window.clearTimeout(timer)
-  }, [query, country])
+  }, [query, country, value?.label, value?.lat])
 
   function handleSelect(place) {
     skipNextSearch.current = true
@@ -55,37 +79,60 @@ function LocationPicker({ value, onChange, showCurrentLocation = false }) {
     setStatus('Lugar seleccionado.')
   }
 
+  function handleCountryChange(event) {
+    const nextCountry = event.target.value
+    setCountry(nextCountry)
+    setResults([])
+    onChange({
+      lat: value?.lat ?? null,
+      lng: value?.lng ?? null,
+      label: value?.label || query,
+      country: nextCountry,
+    })
+  }
+
+  const knownCountry = COUNTRIES.some((item) => item.code === country)
+  const countryOptions =
+    country && !knownCountry
+      ? [{ code: country, name: country }, ...COUNTRIES]
+      : COUNTRIES
+
   return (
     <div className="location-box">
       <p>
-        Elegí el país y escribí tu localidad. Van a aparecer
-        sugerencias para que elijas el lugar correcto.
+        {presetCountry
+          ? 'Este es el país de tu cuenta. Podés cambiarlo y actualizar la localidad.'
+          : 'Elegí el país y escribí tu localidad. Van a aparecer sugerencias para que elijas el lugar correcto.'}
       </p>
 
-      <label>
-        País
-        <select
-          value={country}
-          onChange={(event) => {
-            setCountry(event.target.value)
-            setResults([])
-          }}
-        >
-          <option value="">Elegí un país</option>
-          {COUNTRIES.map((item) => (
-            <option key={item.code} value={item.code}>
-              {item.name}
-            </option>
-          ))}
-        </select>
-      </label>
+      {presetCountry && !country && countryPending ? (
+        <p className="muted">Cargando el país de tu cuenta...</p>
+      ) : (
+        <label>
+          País
+          <select value={country} onChange={handleCountryChange}>
+            {presetCountry ? null : <option value="">Elegí un país</option>}
+            {presetCountry && !country ? (
+              <option value="">País de la cuenta</option>
+            ) : null}
+            {countryOptions.map((item) => (
+              <option key={item.code} value={item.code}>
+                {item.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
 
       <label>
         Localidad
         <input
           type="search"
           value={query}
-          onChange={(event) => setQuery(event.target.value)}
+          onChange={(event) => {
+            queryUntouched.current = false
+            setQuery(event.target.value)
+          }}
           onKeyDown={(event) => {
             if (event.key === 'Enter') {
               event.preventDefault()

@@ -87,7 +87,11 @@ function Alerts({ onNavigate, onOpenChat }) {
                   <p>
                     {alert.tipo === 'peticion_aceptada'
                       ? 'Petición aceptada'
-                      : 'Proximidad'}
+                      : alert.tipo === 'donacion_realizada'
+                        ? 'Donación realizada'
+                        : alert.tipo === 'pedido_cerrado'
+                          ? 'Pedido cerrado'
+                          : 'Proximidad'}
                     {' · '}
                     {alert.leida ? 'Leída' : 'Nueva'}
                   </p>

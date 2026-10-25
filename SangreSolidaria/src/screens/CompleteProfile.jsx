@@ -52,6 +52,7 @@ function CompleteProfile({ onNavigate }) {
         donorId: user.donante_id,
         phone,
         city: coords.label || user.ciudad,
+        country: coords.country,
         latitud: coords.lat,
         longitud: coords.lng,
         radioKm: radiusKm,

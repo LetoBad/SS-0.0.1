@@ -53,6 +53,27 @@ export function loadGoogleMaps() {
 
 const geocodeCache = new Map()
 
+export async function countryCodeFromCoords(lat, lng) {
+  if (lat == null || lng == null) return ''
+
+  const maps = await loadGoogleMaps()
+  const geocoder = new maps.Geocoder()
+
+  return new Promise((resolve) => {
+    geocoder.geocode({ location: { lat: Number(lat), lng: Number(lng) } }, (items, status) => {
+      if (status !== 'OK' || !items?.length) {
+        resolve('')
+        return
+      }
+
+      const component = items[0].address_components?.find((part) =>
+        part.types.includes('country')
+      )
+      resolve(component?.short_name || '')
+    })
+  })
+}
+
 export async function geocodePlace(query, countryCode) {
   const results = await searchPlaces(query, countryCode)
   return results[0] || null

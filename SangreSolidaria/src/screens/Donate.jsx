@@ -3,19 +3,17 @@ import { useAuth } from '../context/AuthContext.jsx'
 import DonorsMap from '../components/DonorsMap.jsx'
 import {
   listActiveRequests,
-  listAvailableDonors,
   listMyConversations,
   offerDonation,
 } from '../lib/db.js'
 import { canDonateTo } from '../lib/catalog.js'
+import { formatDateInput, formatIsoDate, parseCalendarDate } from '../lib/dates.js'
 import { distanceKm, formatKm, isWithinRadius } from '../lib/geo.js'
 
 function Donate({ onNavigate, onOpenChat }) {
   const { user } = useAuth()
   const [requests, setRequests] = useState([])
-  const [donors, setDonors] = useState([])
-  const [notes, setNotes] = useState('')
-  const [date, setDate] = useState('')
+  const [dateFilter, setDateFilter] = useState('')
   const [focusCoords, setFocusCoords] = useState(null)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
@@ -27,10 +25,6 @@ function Donate({ onNavigate, onOpenChat }) {
     listActiveRequests()
       .then(setRequests)
       .catch((err) => setError(err.message))
-
-    listAvailableDonors()
-      .then(setDonors)
-      .catch(() => setDonors([]))
 
     if (user?.id) {
       listMyConversations(user.id)
@@ -46,8 +40,18 @@ function Donate({ onNavigate, onOpenChat }) {
   }, [user?.id])
 
   async function handleOffer(request) {
-    if (!user?.donante_id) {
-      setError('Necesitás una cuenta de donante para ofrecer sangre.')
+    if (!user?.donante_id || !user?.grupo) {
+      setError('Cargá tu grupo sanguíneo en el perfil para poder ofrecer sangre.')
+      return
+    }
+
+    if (String(request.usuario_id) === String(user.id)) {
+      setError('Esta solicitud es tuya. No podés ofrecerte como donante de tu propio pedido.')
+      return
+    }
+
+    if (!canDonateTo(user.grupo, request.grupo_sanguineo)) {
+      setError('Tu grupo no es compatible con este pedido.')
       return
     }
 
@@ -59,8 +63,6 @@ function Donate({ onNavigate, onOpenChat }) {
       const donation = await offerDonation({
         donorId: user.donante_id,
         requestId: request.id,
-        notes,
-        date,
       })
       if (request.latitud != null && request.longitud != null) {
         setFocusCoords({ lat: request.latitud, lng: request.longitud })
@@ -90,7 +92,7 @@ function Donate({ onNavigate, onOpenChat }) {
         <div className="page-card">
           <span className="tag">Salvá una vida</span>
           <h1>Hacer una donación</h1>
-          <p>Para ofrecer una donación, primero iniciá sesión o registrate como donante.</p>
+          <p>Para ofrecer una donación, primero iniciá sesión o registrate.</p>
           <div className="hero-buttons">
             <button className="btn-primary" onClick={() => onNavigate('login')}>
               Iniciar sesión
@@ -109,6 +111,21 @@ function Donate({ onNavigate, onOpenChat }) {
       ? { lat: Number(user.latitud), lng: Number(user.longitud) }
       : null
   const radiusKm = user.radio_km || 5
+  const compatibleRequests = user.grupo
+    ? requests.filter(
+        (request) =>
+          String(request.usuario_id) !== String(user.id) &&
+          canDonateTo(user.grupo, request.grupo_sanguineo)
+      )
+    : []
+  const filterIso = parseCalendarDate(dateFilter)
+  const dateFilterInvalid = dateFilter.length === 10 && !filterIso
+  const visibleRequests =
+    filterIso == null
+      ? compatibleRequests
+      : compatibleRequests.filter(
+          (request) => String(request.fecha_necesidad || '').slice(0, 10) === filterIso
+        )
 
   return (
     <main className="page">
@@ -116,18 +133,18 @@ function Donate({ onNavigate, onOpenChat }) {
         <span className="tag">Salvá una vida</span>
         <h1>Hacer una donación</h1>
         <p>
-          Elegí una solicitud activa. Tu radio y ubicación
-          se configuran en el perfil.
+          Ves solo los pedidos compatibles con tu grupo.
+          El radio y la ubicación se configuran en el perfil.
         </p>
 
-        {!user.donante_id ? (
+        {!user.grupo ? (
           <p className="form-error">
-            Tu cuenta no tiene perfil de donante. Registrate
-            como donante para poder ofrecer sangre.
+            Cargá tu grupo sanguíneo en el perfil para ver
+            pedidos compatibles y poder ofrecer sangre.
           </p>
         ) : (
           <p className="muted">
-            Radio actual: {user.radio_km || 5} km.{' '}
+            Grupo {user.grupo}. Radio actual: {user.radio_km || 5} km.{' '}
             <button type="button" className="link-button" onClick={() => onNavigate('perfil')}>
               Cambiar en mi perfil
             </button>
@@ -136,44 +153,43 @@ function Donate({ onNavigate, onOpenChat }) {
 
         <div className="map-legend">
           <span>
-            <i className="dot dot-donor" /> Donantes disponibles
-          </span>
-          <span>
-            <i className="dot dot-request" /> Solicitudes
+            <i className="dot dot-request" /> Solicitudes compatibles
           </span>
         </div>
 
-        <DonorsMap
-          donors={donors}
-          requests={requests}
-          focusCoords={focusCoords}
-        />
+        <DonorsMap requests={visibleRequests} focusCoords={focusCoords} />
 
         <form className="form" onSubmit={(event) => event.preventDefault()}>
           <label>
-            Fecha disponible
+            Filtrar por fecha
             <input
-              type="date"
-              value={date}
-              onChange={(event) => setDate(event.target.value)}
+              type="text"
+              value={dateFilter}
+              onChange={(event) => setDateFilter(formatDateInput(event.target.value))}
+              placeholder="dd/mm/aaaa"
+              inputMode="numeric"
+              maxLength={10}
+              pattern="\d{2}/\d{2}/\d{4}"
+              title="Usá el formato dd/mm/aaaa"
             />
           </label>
-          <label>
-            Comentarios
-            <textarea
-              value={notes}
-              onChange={(event) => setNotes(event.target.value)}
-              placeholder="Horarios, centro de salud preferido, etc."
-              rows={3}
-            />
-          </label>
+          <p className="muted">
+            Mostrá los pedidos que necesitan donantes ese día. Dejala vacía para ver todos.
+          </p>
+          {dateFilterInvalid ? (
+            <p className="form-error">Ingresá la fecha como dd/mm/aaaa.</p>
+          ) : null}
         </form>
 
         <div className="request-list">
-          {requests.length === 0 ? (
-            <p className="muted">No hay solicitudes activas por ahora.</p>
+          {!user.grupo ? null : visibleRequests.length === 0 ? (
+            <p className="muted">
+              {filterIso
+                ? `No hay solicitudes compatibles para el ${dateFilter}.`
+                : 'No hay solicitudes compatibles con tu grupo por ahora.'}
+            </p>
           ) : (
-            requests.map((request) => {
+            visibleRequests.map((request) => {
               const requestPoint =
                 request.latitud != null && request.longitud != null
                   ? { lat: Number(request.latitud), lng: Number(request.longitud) }
@@ -181,7 +197,6 @@ function Donate({ onNavigate, onOpenChat }) {
               const km = donorPoint && requestPoint
                 ? distanceKm(donorPoint, requestPoint)
                 : null
-              const compatible = canDonateTo(user.grupo, request.grupo_sanguineo)
               const inside = donorPoint && requestPoint
                 ? isWithinRadius(donorPoint, requestPoint, radiusKm)
                 : false
@@ -197,11 +212,11 @@ function Donate({ onNavigate, onOpenChat }) {
                     </p>
                     <p>
                       {request.cantidad_donantes} donante(s) ·{' '}
-                      {request.fecha_necesidad || 'Sin fecha'}
+                      {formatIsoDate(request.fecha_necesidad) || 'Sin fecha'}
                     </p>
                     <p>
                       Distancia: {formatKm(km)}
-                      {inside && compatible ? ' · Dentro de tu radio' : ''}
+                      {inside ? ' · Dentro de tu radio' : ''}
                     </p>
                   </div>
                   <div className="request-actions">
